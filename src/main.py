@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Request
 import os
 import uvicorn
 from dotenv import load_dotenv
@@ -7,7 +7,14 @@ from p_model_type import UploadDoc
 from getdata import ExtractText
 import json
 import models
-from models import engine
+from models import engine,get_db
+from config import settings
+from oauth import flow, auth_callback
+from fastapi.responses import RedirectResponse
+from sqlalchemy.orm import Session
+import requests
+from fastapi.middleware.cors import CORSMiddleware
+
 
 
 load_dotenv()
@@ -16,16 +23,69 @@ models.Base.metadata.create_all(bind=engine)
 
 accessllm = AccessLLM(api_key=os.getenv("OPENAI_CHATGPT"))
 
+app = FastAPI()
+
+origins = ["*","https://f6bd-142-198-196-182.ngrok-free.app"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["*"],
+)
+
 # {"expected_time": "4 weeks","list_of_developers":["data analyst", "data engineer", "data architect", "devops engineer","developer"]}
 
-app = FastAPI()
+
 
 UPLOADS_DIR = "uploads"
 os.makedirs(UPLOADS_DIR, exist_ok=True) 
 
+auth_states={}
+
 @app.get("/")
 async def home():
-    return "Hello World"
+    return "Welcome to Oauth testing login page"
+
+@app.get("/auth/login")
+async def login():
+    auth_url, state = flow.authorization_url(prompt="consent")
+    print(flow.redirect_uri)
+    auth_states[state]=True
+    print(f"Authorization URL: {auth_url}")
+    # print(f"Generated state: {state}")
+    return RedirectResponse(auth_url)
+
+@app.get("/auth/callback")
+async def callback(request: Request, db: Session = Depends(get_db)):
+
+        # Extract the state from query parameters
+    state = request.query_params.get("state")
+    if not state or state not in auth_states:
+        raise HTTPException(status_code=400, detail="Invalid or missing state")
+    response = auth_callback(url=request.url)
+    if response["message"] == "bad request":
+        raise HTTPException(status_code=400, detail="Issue with your login, Please try again")
+    
+    user = db.query(models.User).filter(models.User.oauth_id == response["user"]["id"]).first()
+    if not user:
+        
+        user = models.User(
+            oauth_id = response["user"]["id"], 
+            email = response["user"]["email"],
+            name = response["user"]["name"],
+            picture = response["user"]["picture"],
+            provider = response["provider"]
+        )
+        try:
+            db.add(user)
+            db.commit()
+            db.refresh()
+        except Exception as e:
+            db.rollback() 
+
+
+
 
 @app.post("/upload/")
 async def upload_file(payload:str = Form(...), file:UploadFile = File(...)):

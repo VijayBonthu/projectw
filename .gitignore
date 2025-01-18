@@ -2,3 +2,4 @@ venv
 __pycache__
 uploads
 .env
+client_secret_g.json
