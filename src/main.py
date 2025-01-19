@@ -8,14 +8,12 @@ from getdata import ExtractText
 import json
 import models
 from models import engine,get_db
-from config import settings
 from oauth import flow, auth_callback
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-import requests
+from database_scripts import get_or_create_user,UserCreationError
 from fastapi.middleware.cors import CORSMiddleware
-
-
+from utils import create_token
 
 load_dotenv()
 
@@ -25,7 +23,13 @@ accessllm = AccessLLM(api_key=os.getenv("OPENAI_CHATGPT"))
 
 app = FastAPI()
 
-origins = ["*","https://f6bd-142-198-196-182.ngrok-free.app"]
+origins = [
+    "https://immense-finally-giraffe.ngrok-free.app",
+    "http://immense-finally-giraffe.ngrok-free.app",
+    "http://localhost",
+    "http://localhost:8080",
+    # Add any other domains that need to access your API
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -41,51 +45,55 @@ app.add_middleware(
 UPLOADS_DIR = "uploads"
 os.makedirs(UPLOADS_DIR, exist_ok=True) 
 
-auth_states={}
-
+auth_states = {}
 @app.get("/")
 async def home():
     return "Welcome to Oauth testing login page"
 
 @app.get("/auth/login")
 async def login():
-    auth_url, state = flow.authorization_url(prompt="consent")
-    print(flow.redirect_uri)
-    auth_states[state]=True
-    print(f"Authorization URL: {auth_url}")
-    # print(f"Generated state: {state}")
-    return RedirectResponse(auth_url)
+    result= flow.authorization_url(prompt="consent")
+
+    auth_url = result[0] if isinstance(result, tuple) else result
+    state = result[1] if isinstance(result, tuple) else None
+
+    if state:
+        auth_states[state] = True
+    print(auth_url)
+    return RedirectResponse(url=str(auth_url))
 
 @app.get("/auth/callback")
-async def callback(request: Request, db: Session = Depends(get_db)):
+async def callback(request: Request, db:Session=Depends(get_db)):
 
-        # Extract the state from query parameters
+    # Extract the state from query parameters
     state = request.query_params.get("state")
     if not state or state not in auth_states:
-        raise HTTPException(status_code=400, detail="Invalid or missing state")
-    response = auth_callback(url=request.url)
-    if response["message"] == "bad request":
-        raise HTTPException(status_code=400, detail="Issue with your login, Please try again")
+        raise HTTPException(status_code=400, detail="Link already expired, Try to login in again")
+    try: 
+        #Uses Google authentication to login
+        response =auth_callback(url=request.url)
+        if response.get("message") == "bad request":
+            raise HTTPException(status_code=400, detail="Issue with your login, Please try again")
+        user_data = response["user"]
+        #create a record in DB if its the first time or get the details for jwt payload
+        user = await get_or_create_user(user_data=user_data,provider=response['provider'], db=db)
+        auth_states.pop(state,None)
+    except UserCreationError as e:
+        raise HTTPException(status_code=500, detail=f"Authentication failed: {e}")
     
-    user = db.query(models.User).filter(models.User.oauth_id == response["user"]["id"]).first()
-    if not user:
-        
-        user = models.User(
-            oauth_id = response["user"]["id"], 
-            email = response["user"]["email"],
-            name = response["user"]["name"],
-            picture = response["user"]["picture"],
-            provider = response["provider"]
-        )
-        try:
-            db.add(user)
-            db.commit()
-            db.refresh()
-        except Exception as e:
-            db.rollback() 
+    payload= {
+        "id": user.user_id,
+        "oauth_id": user.oauth_id,
+        "picture": user.picture,
+        "provider": user.provider,
+        "email":user.email
+    }
+     # creates JWT token
+    token = create_token(user_data=payload)
+    return {"access_token": token, "token_type":"bearer"}
 
 
-
+    
 
 @app.post("/upload/")
 async def upload_file(payload:str = Form(...), file:UploadFile = File(...)):
