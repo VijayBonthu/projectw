@@ -9,7 +9,7 @@ class UserCreationError(Exception):
     pass
 
 async def get_or_create_user(user_data:registration_login,provider:str, db:Session):
-    # {'id': '106124317363210854486', 'email': 'minatobonthu@gmail.com', 'verified_email': True, 'name': 'minato bonthu', 'given_name': 'minato', 'family_name': 'bonthu', 'picture': 'https://lh3.googleusercontent.com/a/ACg8ocKaB3SgzhN1nS059s7D1re6z0eTnG6wtUDl5A695G-8Akhvq5GD=s96-c'}
+    # {'id': '106124317363210854486', 'email': '@gmail.com', 'verified_email': True, 'name': 'full name', 'given_name': 'first name', 'family_name': 'last name', 'picture': 'https://lh3.googleusercontent.com/a/ACg8ocKaB3SgzhN1nS059s7D1re6z0eTnG6wtUDl5A695G-8Akhvq5GD'}
     if not user_data:
         raise UserCreationError(f"unable to retrive login details")
     try:

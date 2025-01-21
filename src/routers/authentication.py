@@ -57,22 +57,4 @@ async def callback(request: Request, db:Session=Depends(get_db)):
     token = create_token(user_data=payload)
     return {"access_token": token, "token_type":"bearer"}
 
-# @router.post("/register")
-# async def login_register(registration_details:registration_login, db:Session=Depends(get_db)):
-#     try:
-#         user = await get_or_create_user(user_data=registration_details, provider="Local", db=db)
-#         return {"message":"Please verify your email sent to your email address"}
-#     except UserCreationError as e:
-#         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Something went wrong, it is not you, Please try after sometime")
-
-##TODO
-
-# login registration
-# send email to register email address with 24 hours expiry
-# activate the account if clicked on the link, if not remove the accounts.
-# password Reset
-# create JWT 
-# complete registration process.
-# might need to change the create account method to accommodate waiting for activation.
-
 
