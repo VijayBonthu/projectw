@@ -14,5 +14,6 @@ class Settings:
     DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOSTNAME}:{POSTGRES_PORT}/{POSTGRES_DB}"
     ALGORITHM=os.getenv("ALGORITHM")
     SECRET_KEY_J=os.getenv("SECRET_KEY_J")
+    TOKEN_EXPIRED_TIME_IN_DAYS=os.getenv("TOKEN_EXPIRED_TIME_IN_DAYS")
 
 settings = Settings()

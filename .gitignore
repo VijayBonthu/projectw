@@ -3,3 +3,5 @@ __pycache__
 uploads
 .env
 client_secret_g.json
+/src/llm_test.py
+formated_document.txt

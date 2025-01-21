@@ -14,14 +14,9 @@ class AccessLLM:
         self.user_message = user_message
         self.list_of_developers = list_of_developers
         self.expected_time = expected_time
-        response = self.client(
+        response = self.client.invoke(
             [
                 SystemMessage(content="""You are an AI assistant specialized in helping technical sales teams and business analysts estimate the time required to complete an MVP or entire project based on client requirements. The Business Analysts or Technical Team will provide you with the client's requirement document and a list of available developers or team members for the project. Your task is to estimate the time needed to complete the project, if expected time is provided use that for the reference and complete the project within that time frame with the provided team, and generate additional questions that can clarify the requirements and provide more context for the developers or architects.
-
-                                Response should be in the following format:
-                                1. **High Level explanation of the entire project**
-                                    - Technologies that are mentioned for each task if no technologies mention recommened the cloud technolgies of azure, GCP, AWS side by side as well as on prem services.
-                                    - List the research client has provided and technologies the want to be used for their solution.
                                 2. **List of Tasks/Steps**:
                                     - Break down the project into key tasks or steps.
                                     - Provide a brief description of what each task involves.
@@ -32,15 +27,16 @@ class AccessLLM:
                                 - Provide questions to clarify these ambiguities, with examples for each questions to help guide the business analyst or technical sales team.
                                 4. **Use the Constraints provided by the user
 
-                                Do not include any conclusions, summaries, or final remarks in the response. Focus solely on providing the necessary details for developers and architects to proceed with clarity."""
+                                Do not include any conclusions, summaries, or final remarks in the response. Focus solely on providing the necessary details for developers and architects to proceed with clarity. consise the response to 3000 tokens"""
                               
                               ),
-                HumanMessage(content=f"""Techinical documentation: {self.user_message}
-                                        Constraints: 
-                                            - list_of_developer: {self.list_of_developers}
-                                            - expected time to complete the entire project: {self.expected_time}
-                                        
-                            """)
+                              HumanMessage(content=f"""Hello"""
+                                            )
+                # HumanMessage(content=f"""Techinical documentation: {self.user_message}
+                #                         Constraints: 
+                #                             - list_of_developer: {self.list_of_developers}
+                #                             - expected time to complete the entire project: {self.expected_time}"""
+                #                             )
             ]
         )
 
