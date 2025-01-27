@@ -5,3 +5,4 @@ uploads
 client_secret_g.json
 /src/llm_test.py
 formated_document.txt
+/src/test.py

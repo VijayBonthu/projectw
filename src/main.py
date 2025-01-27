@@ -1,19 +1,10 @@
-from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Request
-import os
+from fastapi import FastAPI
 import uvicorn
 from dotenv import load_dotenv
-from processdata import AccessLLM
-from p_model_type import UploadDoc
-from getdata import ExtractText
-import json
 import models
-from models import engine,get_db
-from oauth import flow, auth_callback
-from fastapi.responses import RedirectResponse
-from sqlalchemy.orm import Session
-from database_scripts import get_or_create_user,UserCreationError
+from models import engine
 from fastapi.middleware.cors import CORSMiddleware
-from utils import create_token, validate_token
+
 from routers import authentication, services
 
 load_dotenv()

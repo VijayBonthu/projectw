@@ -5,22 +5,22 @@ class UploadDoc(BaseModel):
     expected_time:str = None
     list_of_developers:Optional[list[str]] = None
 
-class registration_login(BaseModel):
+class Registration_login(BaseModel):
     email:str
-    oauth_id:str = None
-    first_name:str
-    last_name:str
+    id:str = None
+    given_name:str
+    family_name:str
     verified_email:bool=False
     name:str
     picture:str = None
-    provider:str
+    provider:str = None
 
-# class registration_oauth_google(BaseModel):
-#     email_address:str
-#     oauth_id:str
-#     first_name:str
-#     last_name:str
-#     verified_email:bool
-#     name:str
-#     picture:str = None
-#     provider:str
+class Registration_login_password(BaseModel):
+    email:str
+    given_name:str
+    family_name:str
+    password:str
+
+class login_details(BaseModel):
+    email_address:str
+    password:str

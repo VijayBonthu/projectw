@@ -3,7 +3,10 @@ from datetime import datetime, timedelta, timezone
 from config import settings
 from fastapi import Depends, status, HTTPException,Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from passlib.context import CryptContext
+import secrets
 
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 def create_token(user_data:dict):
@@ -41,3 +44,9 @@ def validate_token(token:str, credential_exception):
 def get_current_user(token: HTTPAuthorizationCredentials = Security(security)):
     credential_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Could not validate credentials", headers={"WWW-Authenticate": "Bearer"})
     return validate_token(token.credentials, credential_exception)
+
+def hash_passwords(password:str):
+    return pwd_context.hash(password)
+
+def verify_password(password:str, hashed_password:str):
+    return pwd_context.verify(password,hashed_password)
