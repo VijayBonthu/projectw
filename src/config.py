@@ -15,5 +15,6 @@ class Settings:
     ALGORITHM=os.getenv("ALGORITHM")
     SECRET_KEY_J=os.getenv("SECRET_KEY_J")
     TOKEN_EXPIRED_TIME_IN_DAYS=os.getenv("TOKEN_EXPIRED_TIME_IN_DAYS")
+    FILE_SIZE = os.getenv("FILE_SIZE")
 
 settings = Settings()

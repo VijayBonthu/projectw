@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 import models
 from models import engine
 from fastapi.middleware.cors import CORSMiddleware
-
 from routers import authentication, services
 
 load_dotenv()

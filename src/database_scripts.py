@@ -18,7 +18,7 @@ async def create_user(user_data:dict,provider:str, db:Session):
     try:
         query = db.query(models.User).filter(and_(models.User.email_address == user_data["email"], models.User.provider == provider))
         user_details = query.first()
-        if user_details:
+        if user_details and user_details.provider == "Local":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Record already Exists, try logging into the account")
     except SQLAlchemyError as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"unable to connect to DB {e}")
@@ -79,4 +79,19 @@ def get_user_details(email_address:str, db:Session):
     if not record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Details not found, please register your account")
     return record
+
+
+async def user_documents(doc_data:dict, db:Session):
+    if not doc_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No document data found with valid user_id found")
+    document_details = models.UserDocuments(
+        user_id = doc_data["user_id"],
+        document_path = doc_data["document_path"]
+    )
+    try:
+        db.add(document_details)
+        db.commit()
+    except SQLAlchemyError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"unable to create document data {str(e)}")
+    
 

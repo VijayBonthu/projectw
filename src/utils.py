@@ -4,7 +4,9 @@ from config import settings
 from fastapi import Depends, status, HTTPException,Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from passlib.context import CryptContext
-import secrets
+import os
+
+UPLOADS_DIR = "uploads"
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
@@ -50,3 +52,4 @@ def hash_passwords(password:str):
 
 def verify_password(password:str, hashed_password:str):
     return pwd_context.verify(password,hashed_password)
+
