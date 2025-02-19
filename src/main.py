@@ -5,6 +5,10 @@ import models
 from models import engine
 from fastapi.middleware.cors import CORSMiddleware
 from routers import authentication, services
+from utils.logger import setup_logger
+
+# Setup logging once at application startup
+logger = setup_logger()
 
 load_dotenv()
 

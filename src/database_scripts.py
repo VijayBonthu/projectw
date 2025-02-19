@@ -4,7 +4,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from p_model_type import Registration_login
 from sqlalchemy import and_
-from utils import hash_passwords
+from utils.token_generation import hash_passwords
 from fastapi import HTTPException, status
 
 class UserCreationError(Exception):

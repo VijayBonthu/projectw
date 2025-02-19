@@ -9,12 +9,18 @@ from typing import List, Dict
 import fitz 
 from pptx import Presentation
 import camelot
+from agents.workflow import ProjectScopingAgent
+from contextlib import asynccontextmanager
+from io import BytesIO
+import tempfile
 
 
 class ExtractText:
-    def __init__(self, document_path:str = None, url=None):
+    def __init__(self, document_path:str = None, url=None,user_id:str=None, document_id:str=None):
         self.document_path = document_path
         self.url = url
+        self.user_id = user_id
+        self.document_id = document_id
         os.makedirs("uploads_images", exist_ok=True)
 
     @staticmethod
@@ -53,7 +59,7 @@ class ExtractText:
                 for elem in block._element.iter():
                     if elem.tag.endswith('drawing'):
                         # Check for inline images
-                        inline = elem.find('.//' + qn('wp:inline'))
+                        inline = elem.find('.//' + qn('wp:inline')) 
                         if inline is not None:
                             blip = inline.find('.//' + qn('a:blip'))
                             if blip is not None:
@@ -62,10 +68,10 @@ class ExtractText:
                                     image_part = doc.part.related_parts[image_id]
                                     image_bytes = image_part.blob
                                     image_count += 1
-                                    image_path = os.path.join("uploads_images", f"image_{image_count}.png")
+                                    image_path = os.path.join("uploads_images", f"{self.document_id}_{self.user_id}_image_{image_count}.png")
                                     with open(image_path, "wb") as f:
                                         f.write(image_bytes)
-                                    content.append({"type": "image", "data": image_path})
+                                    content.append({"type": "image", "data": image_path, "content":ProjectScopingAgent.summarize_image(image_path)})
 
                         # Check for floating images (anchored)
                         anchor = elem.find('.//' + qn('wp:anchor'))
@@ -77,10 +83,10 @@ class ExtractText:
                                     image_part = doc.part.related_parts[image_id]
                                     image_bytes = image_part.blob
                                     image_count += 1
-                                    image_path = os.path.join("uploads_images", f"image_{image_count}.png")
+                                    image_path = os.path.join("uploads_images", f"{self.document_id}_{self.user_id}_image_{image_count}.png")
                                     with open(image_path, "wb") as f:
                                         f.write(image_bytes)
-                                    content.append({"type": "image", "data": image_path})
+                                    content.append({"type": "image", "data": image_path, "content":ProjectScopingAgent.summarize_image(image_path)})
 
             # Process tables
             elif isinstance(block, docx.table.Table):
@@ -91,15 +97,18 @@ class ExtractText:
                 content.append({"type": "table", "data": table_data})
 
         return content
-    
+
 
     async def process_pdf_with_structure(self):
         content = []
-        image_count = 0
 
-        with fitz.open(self.document_path) as doc:
+        # Read the entire PDF into memory
+        with open(self.document_path, "rb") as f:
+            pdf_bytes = f.read()
+
+        # Process text and images with PyMuPDF from memory
+        async with open_pdf(stream=pdf_bytes, filetype="pdf") as doc:
             for page_num, page in enumerate(doc):
-                # Extract text
                 text = page.get_text().strip()
                 if text:
                     content.append({"type": "text", "data": text})
@@ -111,18 +120,26 @@ class ExtractText:
                     base_image = doc.extract_image(xref)
                     image_bytes = base_image["image"]
                     image_ext = base_image["ext"]
-                    image_path = os.path.join("uploads_images", f"pdf_image_{page_num+1}_{img_index+1}.{image_ext}")
+                    image_path = os.path.join("uploads_images", f"{self.document_id}_{self.user_id}_pdf_image_{page_num+1}_{img_index+1}.{image_ext}")
                     with open(image_path, "wb") as f:
                         f.write(image_bytes)
-                    content.append({"type": "image", "data": image_path})
+                    content.append({"type": "image", "data": image_path, "content": ProjectScopingAgent.summarize_image(image_path)})
 
-                # Extract tables (requires Camelot/Tabula; here's a basic approach)
-                try:
-                    tables = camelot.read_pdf(self.document_path, pages=str(page_num+1))
-                    for table in tables:
-                        content.append({"type": "table", "data": table.df.values.tolist()})
-                except ImportError:
-                    pass
+        # Process tables with Camelot using a temporary file
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        try:
+            temp_file.write(pdf_bytes)
+            temp_file.close()  # Ensure the file is closed so Camelot can access it
+
+            tables = camelot.read_pdf(temp_file.name, pages="all")
+            for table in tables:
+                content.append({"type": "table", "data": table.df.values.tolist()})
+        except ImportError:
+            pass
+        except Exception as e:
+            print(f"Error processing tables: {e}")
+        finally:
+            os.remove(temp_file.name)  # Clean up the temporary file
 
         return content
     
@@ -162,10 +179,10 @@ class ExtractText:
                     image = shape.image
                     image_bytes = image.blob
                     image_ext = image.ext
-                    image_path = os.path.join("uploads_images", f"pptx_image_{slide_num+1}_{image_count+1}.{image_ext}")
+                    image_path = os.path.join("uploads_images", f"{self.document_id}_{self.user_id}_pptx_image_{slide_num+1}_{image_count+1}.{image_ext}")
                     with open(image_path, "wb") as f:
                         f.write(image_bytes)
-                    content.append({"type": "image", "data": image_path})
+                    content.append({"type": "image", "data": image_path, "content":ProjectScopingAgent.summarize_image(image_path)})
                     image_count += 1
 
                 # Extract tables
@@ -203,11 +220,25 @@ class ExtractText:
             return self.extract_txt()
         elif file_extension == ".csv":
             return self.extract_csv()
-        elif file_extension == ".xlsx":
-            return self.process_excel()
+        #removing .xlsx cause of parsing issue for now # too lazy to write parsing in service.py
+        # elif file_extension == ".xlsx":
+        #     return self.process_excel()
         elif file_extension == ".pptx":
             return self._process_pptx()
         else:
-            return "unsupported file type. Please provide .docx or .pdf file"
-    
+            return "unsupported file type. Please provide .docx .pdf .txt .pptx file"
+
+@asynccontextmanager
+async def open_pdf(document_path: str = None, stream: bytes = None, filetype: str = None):
+    if document_path:
+        doc = fitz.open(document_path)
+    elif stream and filetype:
+        doc = fitz.open(stream=stream, filetype=filetype)
+    else:
+        raise ValueError("Either document_path or stream and filetype must be provided")
+    try:
+        yield doc
+    finally:
+        doc.close()
+        print("Closed the PDF document to conserve resources")
 

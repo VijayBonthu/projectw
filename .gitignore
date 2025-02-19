@@ -3,8 +3,12 @@ __pycache__
 uploads
 .env
 client_secret_g.json
-/src/llm_test.py
+src/llm_test.py
 formated_document.txt
-test.py
 uploads_images
+src/app.log
+project_scoping_report*
+src/test.py
+src/ml_models.py
+
 

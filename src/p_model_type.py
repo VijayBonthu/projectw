@@ -24,3 +24,6 @@ class Registration_login_password(BaseModel):
 class login_details(BaseModel):
     email_address:str
     password:str
+
+class JiraTokenRequest(BaseModel):
+    jira_access_token:str

@@ -1,12 +1,16 @@
-
-from oauth import flow, auth_callback
+from oauth import flow, auth_callback, JiraOAuth
 from fastapi import Depends, HTTPException, Request, APIRouter, status
 from sqlalchemy.orm import Session
 from models import get_db
 from database_scripts import create_user,UserCreationError, get_user_details
-from utils import create_token, verify_password
-import models
+from utils.token_generation import create_token, verify_password, get_current_user
 from p_model_type import Registration_login_password, login_details
+import logging
+from jira_logic.jira_components import get_jira_user_info
+from typing import Dict
+from fastapi.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -112,7 +116,121 @@ def log_into_account(login_details:login_details, db:Session=Depends(get_db)):
     else:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
+@router.get("/auth/jira/login")
+async def jira_login():
+    """Start Jira OAuth flow"""
+    logger.info("Jira login endpoint called")
+    try:
+        auth_url, state = await JiraOAuth().get_authorization_url()
+        auth_states[state] = True
+        logger.info(f"Auth states updated: {auth_states}")
+        logger.info(f"authorization_url: {auth_url}")
+        return {"authorization_url": auth_url}
+    except Exception as e:
+        logger.error(f"Error in jira_login: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
+@router.get("/auth/jira/callback")
+async def jira_callback(
+    request: Request, 
+    db: Session = Depends(get_db),
+    # current_user = Depends(get_user_details)
+):
+    """Handle Jira OAuth callback"""
+    logger.info("Jira callback endpoint hit")
+    
+    state = request.query_params.get("state")
+    code = request.query_params.get("code")
+    error = request.query_params.get("error")
+    
+    if error:
+        logger.error(f"Authorization error: {error}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Authorization failed: {error}"
+        )
+    
+    if not code or not state:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing code or state parameter"
+        )
 
+    if state not in auth_states:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid state"
+        )
+    
+    auth_states.pop(state, None)
+    
+    try:
+        # Get access token
+        jira = JiraOAuth()
+        token_response = await jira.get_access_token(code)
+        logger.info(f"Token response: {token_response}")
+        
+        access_token = token_response["access_token"]
+        refresh_token = token_response.get("refresh_token")
 
+        # Get Jira user info
+        user_info = await get_jira_user_info(access_token)
+        logger.info(f"Jira user info: {user_info}")
+        
+        # Create payload without app_user_id for now
+        payload = {
+            "jira_access_token": access_token,
+            "jira_refresh_token": refresh_token,
+            "provider": "Jira",
+            "jira_account_id": user_info.get("account_id"),
+            "jira_email": user_info.get("email"),
+            "jira_account_id": user_info.get("account_id"),
+            "scope": token_response.get("scope", ""),
+            "token_type": token_response.get("token_type", "Bearer")
+        }
+        
+        jira_token = create_token(user_data=payload)
+        
+        return JSONResponse(content={
+            "access_token": jira_token,
+            "token_type": "bearer",
+            "jira_email": user_info.get("email"),
+            "message": "Jira integration successful"
+        })
+        
+    except Exception as e:
+        logger.error(f"Callback error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
+@router.get("/auth/jira/test")
+async def test_jira_auth():
+    """Test endpoint to verify Jira auth flow"""
+    logger.info("Testing Jira auth flow")
+    try:
+        jira = JiraOAuth()
+        auth_url, state = await jira.get_authorization_url()
+        auth_states[state] = True
+        
+        logger.info(f"Test auth URL generated: {auth_url}")
+        logger.info(f"Test state generated: {state}")
+        logger.info(f"Current auth_states: {auth_states}")
+        
+        return {
+            "authorization_url": auth_url,
+            "state": state,
+            "redirect_uri": jira.redirect_uri,
+            "scopes": ["read:jira-user", "read:jira-work", "write:jira-work", "offline_access"]
+        }
+    except Exception as e:
+        logger.error(f"Test endpoint error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+        

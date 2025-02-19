@@ -16,5 +16,10 @@ class Settings:
     SECRET_KEY_J=os.getenv("SECRET_KEY_J")
     TOKEN_EXPIRED_TIME_IN_DAYS=os.getenv("TOKEN_EXPIRED_TIME_IN_DAYS")
     FILE_SIZE = os.getenv("FILE_SIZE")
+    OPENAI_CHATGPT = os.getenv("OPENAI_CHATGPT")
+    IMAGE_TEXT_LANGUAGE=['en']
+    JIRA_CLIENT_ID = os.getenv("JIRA_CLIENT_ID")
+    JIRA_CLIENT_SECRET = os.getenv("JIRA_CLIENT_SECRET")
+    JIRA_REDIRECT_URI=os.getenv("JIRA_REDIRECT_URI")
 
 settings = Settings()
