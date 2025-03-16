@@ -21,5 +21,7 @@ class Settings:
     JIRA_CLIENT_ID = os.getenv("JIRA_CLIENT_ID")
     JIRA_CLIENT_SECRET = os.getenv("JIRA_CLIENT_SECRET")
     JIRA_REDIRECT_URI=os.getenv("JIRA_REDIRECT_URI")
+    GOOGLE_JWKS = os.getenv("GOOGLE_JWKS_URL")
+    JIRA_JWKS = os.getenv("JIRA_JWKS_URL")
 
 settings = Settings()

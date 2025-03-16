@@ -12,7 +12,10 @@ import camelot
 from agents.workflow import ProjectScopingAgent
 from contextlib import asynccontextmanager
 from io import BytesIO
+import pdfplumber
+import os
 import tempfile
+from utils.logger import logger
 
 
 class ExtractText:
@@ -22,6 +25,7 @@ class ExtractText:
         self.user_id = user_id
         self.document_id = document_id
         os.makedirs("uploads_images", exist_ok=True)
+        logger.info(f"document_path: {self.document_path},user_id: {self.user_id}, document_id: {self.document_id}")
 
     @staticmethod
     def iter_block_items(parent):
@@ -99,12 +103,44 @@ class ExtractText:
         return content
 
 
+
+
+    # async def process_pdf_with_structure(self):
+    #     content = []
+
+    #     # Open the PDF file directly without loading into memory
+    #     with fitz.open(self.document_path) as doc:
+    #         for page_num, page in enumerate(doc):
+    #             # Optimized text extraction
+    #             text = page.get_text("text").strip()
+    #             if text:
+    #                 content.append({"type": "text", "data": text})
+
+    #             # Optimized image extraction
+    #             for img_index, img in enumerate(page.get_images(full=True)):
+    #                 xref = img[0]
+    #                 pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # High-quality image
+    #                 image_path = f"uploads_images/{self.document_id}_{self.user_id}_pdf_image_{page_num+1}_{img_index+1}.png"
+    #                 pix.save(image_path)
+    #                 content.append({"type": "image", "data": image_path, "content": "Image extracted"})
+
+    #     # Optimized Table Extraction using pdfplumber
+    #     with pdfplumber.open(self.document_path) as pdf:
+    #         for page_num, page in enumerate(pdf.pages):
+    #             tables = page.extract_tables()
+    #             for table in tables:
+    #                 content.append({"type": "table", "data": table})
+
+    #     return content
+
+
     async def process_pdf_with_structure(self):
         content = []
 
         # Read the entire PDF into memory
         with open(self.document_path, "rb") as f:
             pdf_bytes = f.read()
+            logger.info("completed reading the document uploaded")
 
         # Process text and images with PyMuPDF from memory
         async with open_pdf(stream=pdf_bytes, filetype="pdf") as doc:
@@ -140,7 +176,8 @@ class ExtractText:
             print(f"Error processing tables: {e}")
         finally:
             os.remove(temp_file.name)  # Clean up the temporary file
-
+            logger.info("Extraction process is complete")
+            logger.info(f"content from extracted pdf: {content[:10]}")
         return content
     
     async def process_excel(self) -> List[Dict]:
@@ -242,3 +279,4 @@ async def open_pdf(document_path: str = None, stream: bytes = None, filetype: st
         doc.close()
         print("Closed the PDF document to conserve resources")
 
+#all authentication is done, want to improve the time time for extracting pdf data and get details of images and table there are 2 pdf functions need to look into it

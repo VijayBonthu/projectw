@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict
 
 class UploadDoc(BaseModel):
     expected_time:str = None
@@ -27,3 +27,15 @@ class login_details(BaseModel):
 
 class JiraTokenRequest(BaseModel):
     jira_access_token:str
+
+class MessageContent(BaseModel):
+    role:str
+    content:str
+    timestamp:Optional[str] = None
+
+class ChatHistoryDetails(BaseModel):
+    chat_history_id:Optional[str] = None
+    user_id:str
+    document_id:str
+    message:List[MessageContent]
+    title:Optional[str] = None

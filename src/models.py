@@ -44,3 +44,14 @@ class UserDocuments(Base):
     document_path = Column(String, nullable=False)
     active_tag = Column(Boolean, nullable=False, default=text("True"))
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
+
+class ChatHistory(Base):
+    __tablename__ = "chat_history"
+    chat_history_id = Column(String, primary_key=True, nullable=False, index=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String,ForeignKey(User.user_id), nullable=False,index=True)
+    document_id = Column(String, ForeignKey(UserDocuments.document_id), nullable=False, index=True)
+    active_tag = Column(Boolean, nullable=False, default=text("True"))
+    message = Column(String, nullable=False)
+    title = Column(String, nullable=True)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
+    modified_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))

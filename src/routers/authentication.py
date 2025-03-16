@@ -1,18 +1,22 @@
 from oauth import flow, auth_callback, JiraOAuth
-from fastapi import Depends, HTTPException, Request, APIRouter, status
+from fastapi import Depends, HTTPException, Request, APIRouter, status, Header
 from sqlalchemy.orm import Session
 from models import get_db
 from database_scripts import create_user,UserCreationError, get_user_details
-from utils.token_generation import create_token, verify_password, get_current_user
+from utils.token_generation import create_token, verify_password, TokenDecoder, validate_app_user, validate_token_incoming_requests
 from p_model_type import Registration_login_password, login_details
 import logging
 from jira_logic.jira_components import get_jira_user_info
 from typing import Dict
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+security = HTTPBearer()
 
 auth_states = {}
 @router.get("/auth/login")
@@ -24,7 +28,7 @@ async def login():
 
     if state:
         auth_states[state] = True
-    return auth_url
+    return RedirectResponse(url=auth_url)
 
 @router.get("/auth/callback", status_code=status.HTTP_200_OK)
 async def callback(request: Request, db:Session=Depends(get_db)):
@@ -59,7 +63,36 @@ async def callback(request: Request, db:Session=Depends(get_db)):
     }
      # creates JWT token
     token = create_token(user_data=payload)
-    return {"access_token": token, "token_type":"bearer"}
+    print(token)
+    
+    # Return HTML instead of JSON
+    html_content = f"""
+    <html>
+    <head><title>Authentication Complete</title></head>
+    <body>
+        <h2>Authentication Successful!</h2>
+        <p>You can close this window and return to the application.</p>
+        
+        <script>
+            // Send token back to opener window
+            if (window.opener) {{
+                window.opener.postMessage(
+                    {{ 
+                        type: 'google_auth_success', 
+                        access_token: '{token}'
+                    }},
+                    '*'  // In production, you should limit this to your app's origin
+                );
+                
+                // Close this window after a delay
+                setTimeout(() => window.close(), 3000);
+            }}
+        </script>
+    </body>
+    </html>
+    """
+    
+    return HTMLResponse(content=html_content)
 
 @router.post("/registration", status_code=status.HTTP_201_CREATED)
 async def create_account(user_details:Registration_login_password, db:Session=Depends(get_db)):
@@ -91,6 +124,7 @@ async def create_account(user_details:Registration_login_password, db:Session=De
     }
 
     token = create_token(user_data=payload)
+    print(token)
     
     return {"access_token": token, "token_type": "bearer"} 
 
@@ -112,20 +146,39 @@ def log_into_account(login_details:login_details, db:Session=Depends(get_db)):
             "email":user_details[0],
         }
         token = create_token(user_data=payload)
+        print(token)
         return {"access_token": token, "token_type": "bearer"}
     else:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-
+    
 @router.get("/auth/jira/login")
-async def jira_login():
-    """Start Jira OAuth flow"""
-    logger.info("Jira login endpoint called")
+async def jira_login(request: Request, token: str = None):
+    """Initiates Jira OAuth flow"""
+    # Validate the token that was passed in the query param
+    if token:
+        try:
+            # Decode and validate the token
+            validate_token_incoming_requests(token=token)
+            # Verify this is a valid user token
+            # ... your validation logic here ...
+        except Exception as e:
+            logger.error(f"Token validation error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token required"
+        )
+    logger.info(f"Jira login endpoint called")
     try:
         auth_url, state = await JiraOAuth().get_authorization_url()
         auth_states[state] = True
         logger.info(f"Auth states updated: {auth_states}")
         logger.info(f"authorization_url: {auth_url}")
-        return {"authorization_url": auth_url}
+        return RedirectResponse(url=auth_url)
     except Exception as e:
         logger.error(f"Error in jira_login: {str(e)}")
         raise HTTPException(
@@ -136,11 +189,9 @@ async def jira_login():
 @router.get("/auth/jira/callback")
 async def jira_callback(
     request: Request, 
-    db: Session = Depends(get_db),
-    # current_user = Depends(get_user_details)
+    db: Session = Depends(get_db)
 ):
     """Handle Jira OAuth callback"""
-    logger.info("Jira callback endpoint hit")
     
     state = request.query_params.get("state")
     code = request.query_params.get("code")
@@ -193,20 +244,42 @@ async def jira_callback(
         }
         
         jira_token = create_token(user_data=payload)
+
+        if jira_token:
         
-        return JSONResponse(content={
-            "access_token": jira_token,
-            "token_type": "bearer",
-            "jira_email": user_info.get("email"),
-            "message": "Jira integration successful"
-        })
+            html_content = f"""
+        <html>
+        <head><title>Authentication Complete</title></head>
+        <body>
+            <h2>Authentication Successful!</h2>
+            <p>You can close this window and return to the application.</p>
+            
+            <script>
+                // Send token back to opener window
+                if (window.opener) {{
+                    window.opener.postMessage(
+                        {{ 
+                            type: 'jira_auth_success', 
+                            access_token: '{jira_token}'
+                        }},
+                        '*'  // In production, you should limit this to your app's origin
+                    );
+                    
+                    // Close this window after a delay
+                    setTimeout(() => window.close(), 3000);
+                }}
+            </script>
+        </body>
+        </html>
+        """
         
+            return HTMLResponse(content=html_content)
     except Exception as e:
-        logger.error(f"Callback error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+            logger.error(f"Callback error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e))
+        
 
 @router.get("/auth/jira/test")
 async def test_jira_auth():
@@ -233,4 +306,14 @@ async def test_jira_auth():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
-        
+@router.post("/decode_token")
+async def decode_token(token:str):
+    token_decoder = TokenDecoder()
+    return token_decoder.decode_oauth_token(token=token)
+
+@router.post("/validate_token")
+async def validate_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    logger.info(f"inside validate_token: {credentials.credentials}")
+    return await validate_app_user(credentials)
+
+

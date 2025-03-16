@@ -358,7 +358,7 @@ class ProjectScopingAgent:
         doc.build(flow, onFirstPage=add_page_numbers, onLaterPages=add_page_numbers)
 
     @staticmethod
-    def summarize_image(image_path: str, max_tokens=1000):
+    async def summarize_image(image_path: str, max_tokens=1000):
         """
         Generate a detailed summary of an image using GPT-4 Vision.
         

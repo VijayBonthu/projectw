@@ -18,9 +18,11 @@ app = FastAPI()
 
 origins = [
     "https://immense-finally-giraffe.ngrok-free.app",
-    "http://immense-finally-giraffe.ngrok-free.app",
+    "https://7ede-142-198-208-131.ngrok-free.app",
     "http://localhost",
     "http://localhost:8080",
+    "http://localhost:3000",
+
     # Add any other domains that need to access your API
 ]
 app.add_middleware(
@@ -31,8 +33,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(authentication.router)
-app.include_router(services.router)
+app.include_router(authentication.router, prefix="/api/v1", tags=["authentication"])
+app.include_router(services.router, prefix="/api/v1", tags=["services"])
 
 @app.get("/")
 async def home():

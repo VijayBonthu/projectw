@@ -81,7 +81,7 @@ def get_user_details(email_address:str, db:Session):
     return record
 
 
-async def user_documents(doc_data:dict, db:Session):
+async def user_documents(doc_data:dict, db:Session) -> dict:
     if not doc_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No document data found with valid user_id found")
     document_details = models.UserDocuments(
@@ -91,6 +91,8 @@ async def user_documents(doc_data:dict, db:Session):
     try:
         db.add(document_details)
         db.commit()
+        db.refresh(document_details)
+        return {"document_id":document_details.document_id,"document_path":document_details.document_path,"user_id":document_details.user_id}
     except SQLAlchemyError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"unable to create document data {str(e)}")
     
