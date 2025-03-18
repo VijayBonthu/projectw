@@ -11,6 +11,7 @@ from datetime import datetime
 from config import settings
 import base64
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
+from typing import List
 
 llm = ChatOpenAI(temperature=1, api_key=settings.OPENAI_CHATGPT, model="gpt-4o-mini")
 # llm_vision = ChatOpenAI(temperature=1, api_key=settings.OPENAI_CHATGPT, model="gpt-4-vision-preview")
@@ -394,3 +395,6 @@ class ProjectScopingAgent:
             
         return response.content
     
+    @staticmethod
+    def chat_with_doc(context:List[dict]):
+        return {"message": "this is from LLM chat responding to user question regarding the document and its recommendataion: this needs to be implemented"}

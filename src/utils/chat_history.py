@@ -97,9 +97,11 @@ async def delete_chat_history(user_id:str, chat_history_id:str, db:Session):
     Dict: marks the chat history active tag to False
     """
     try:
+        chat_history_id = chat_history_id.strip('"\'')
+        logger.info(f"details received for deleting the chat history for user: {user_id}, chat_history_id: {chat_history_id}")
         user_details = db.query(models.ChatHistory)\
-        .filter(and_(models.ChatHistory.user_id == user_id, models.ChatHistory.chat_history_id == chat_history_id)).first()
-
+        .filter(and_(models.ChatHistory.user_id == user_id, models.ChatHistory.chat_history_id == chat_history_id, models.ChatHistory.active_tag == "True")).first()
+        logger.info(f"user_details: {user_details}")
         if not user_details:
             raise HTTPException(status_code=404, detail="Chat history not found")
         user_details.active_tag = False
@@ -113,4 +115,21 @@ async def delete_chat_history(user_id:str, chat_history_id:str, db:Session):
         }
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error")
+    
+async def get_user_chat_history_details(user_id:str, db:Session):
+    try:
+        user_chat_details = db.query(models.ChatHistory).filter(and_(models.ChatHistory.user_id == user_id, models.ChatHistory.active_tag == "True")).all()
+        if user_chat_details:
+            full_history = {}
+            for details in user_chat_details:
+                full_history["chat_history_id"] = details.chat_history_id
+                full_history["title"] = details.title
+                full_history["modified_at"] = details.modified_at
+                full_history["message"] = details.message
+            return full_history
+        else:
+            raise HTTPException(status_code=404, detail="Chat history not found")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Internal server error")

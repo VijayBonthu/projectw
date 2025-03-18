@@ -306,7 +306,7 @@ async def test_jira_auth():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
-@router.post("/decode_token")
+@router.get("/decode_token/{token}")
 async def decode_token(token:str):
     token_decoder = TokenDecoder()
     return token_decoder.decode_oauth_token(token=token)

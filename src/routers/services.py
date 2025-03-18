@@ -2,7 +2,7 @@ from fastapi import File, UploadFile, Form, Depends, APIRouter, HTTPException, s
 from fastapi.responses import HTMLResponse
 import os
 from utils.token_generation import token_validator
-from utils.chat_history import save_chat_history, delete_chat_history
+from utils.chat_history import save_chat_history, delete_chat_history, get_user_chat_history_details
 from getdata import ExtractText
 from processdata import AccessLLM
 from config import settings
@@ -168,57 +168,57 @@ async def upload_file(
         response = await user_documents(doc_data=user_doc, db=db)
         logger.info(f"completed the document upload")
         
-        # Create a unique task ID
-        task_id = str(uuid.uuid4())
+        # # Create a unique task ID
+        # task_id = str(uuid.uuid4())
         
-        # Initialize task status
-        task_status[task_id] = {
-            "status": "pending",
-            "current_step": 0,
-            "step_progress": 0,
-            "message": "Starting document processing"
-        }
+        # # Initialize task status
+        # task_status[task_id] = {
+        #     "status": "pending",
+        #     "current_step": 0,
+        #     "step_progress": 0,
+        #     "message": "Starting document processing"
+        # }
         
-        # Start background processing
-        background_tasks.add_task(
-            process_document_task,
-            file_path=response["document_path"],
-            user_id=response["user_id"],
-            document_id=response["document_id"],
-            task_id=task_id
-        )
+        # # Start background processing
+        # background_tasks.add_task(
+        #     process_document_task,
+        #     file_path=response["document_path"],
+        #     user_id=response["user_id"],
+        #     document_id=response["document_id"],
+        #     task_id=task_id
+        # )
         
-        return {"message": "Document upload successful", "task_id": task_id}
+        # return {"message": "Document upload successful", "task_id": task_id}
         
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error occured please try again {str(e)}")
-    # print("near document extract")
-    # document_data = await ExtractText(document_path=response["document_path"],user_id=response["user_id"],document_id=response["document_id"]).parse_document()
-    # full_data = []
-    # for i in range(len(document_data)):
-    #     full_data.append(document_data[i]["data"])
-    # raw_requirements =  "\n".join(
-    #                     str(item["data"]) if isinstance(item, dict) else str(item) for item in full_data
-    #                             )
+    print("near document extract")
+    document_data = await ExtractText(document_path=response["document_path"],user_id=response["user_id"],document_id=response["document_id"]).parse_document()
+    full_data = []
+    for i in range(len(document_data)):
+        full_data.append(document_data[i]["data"])
+    raw_requirements =  "\n".join(
+                        str(item["data"]) if isinstance(item, dict) else str(item) for item in full_data
+                                )
     
-    #Agent for analyzing and providing the response in PDF
-    # agent = ProjectScopingAgent()
+    # Agent for analyzing and providing the response in PDF
+    agent = ProjectScopingAgent()
     
-    # # Sample data must include the correct structure
-    # sample_data = {
-    #     "input": {
-    #         raw_requirements
-    #     }
-    # }
-    # try:
-    #     requirements = agent.analyze_input(sample_data["input"])
-    #     ambiguities = agent.identify_ambiguities()
-    #     tech_stack = agent.generate_tech_recommendations()
+    # Sample data must include the correct structure
+    sample_data = {
+        "input": {
+            raw_requirements
+        }
+    }
+    try:
+        requirements = agent.analyze_input(sample_data["input"])
+        ambiguities = agent.identify_ambiguities()
+        tech_stack = agent.generate_tech_recommendations()
     # sample_data = {
     #     agent.generate_pdf_report("project_scoping_report.pdf")
-    return {"message": "request completed"}
-    # except Exception as e:
-    #     return {"Critical Error":{str(e)}}
+        return {"message": "request completed", "document_id": response["document_id"], "title":" dummy title for now"}
+    except Exception as e:
+        return {"Critical Error":{str(e)}}
     
     #     }
     # }
@@ -234,12 +234,27 @@ async def get_task_status(
     current_token: dict = Depends(token_validator)
 ):
     """Get the status of a processing task"""
+    logger.info(f"Checking status for task_id: {task_id}")
+    logger.info(f"Available task IDs: {list(task_status.keys())}")
+    
     if task_id not in task_status:
+        # Check if the task was completed and has a result
+        completed_task = next((t for t in task_status.values() 
+                              if t.get("status") == "completed" and 
+                                 t.get("result", {}).get("document_id") == task_id), None)
+        
+        if completed_task:
+            logger.info(f"Found completed task with matching document_id: {task_id}")
+            return completed_task
+            
+        # If we still can't find it, return a more helpful error
+        logger.error(f"Task not found: {task_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Task not found"
+            detail=f"Task not found. Available tasks: {len(task_status)}"
         )
     
+    logger.info(f"Returning status for task_id: {task_id}")
     return task_status[task_id]
 
 @router.post("/jira/get_user")
@@ -362,12 +377,31 @@ async def add_chat_history(request: ChatHistoryDetails,db:Session=Depends(get_db
         logger.info(f"got the details in api ,saving the chat history for user: {chat['user_id']}")
         save_chat = await save_chat_history(chat=chat, db=db)
         print(f"save_chat: {save_chat}")
-        return {"status":save_chat["status"]}
+        return {"status":save_chat["status"], "chat_history_id":save_chat["chat_history_id"], "user_id":save_chat["user_id"],"message":save_chat["message"]}
     except Exception as e:
         logger.error(f"error occured while saving the chat history for user: {chat['user_id']}, error: {str(e)}")
         raise HTTPException(status_code=400, detail=f"details are missing: {str(e)}")
     
 
+@router.delete('/chat/{chat_id}')
+async def chat_delete(chat_id:str,db:Session=Depends(get_db),current_user:dict=Depends(token_validator)):
+    try:
+        
+        deleted_details = await delete_chat_history(user_id = current_user["regular_login_token"]["id"], chat_history_id=chat_id, db=db)
+        logger.info(f"deleted the chat history for user: {current_user['regular_login_token']['id']}, chat_id: {chat_id}")
+        return {"status":deleted_details["status"]}
+    except Exception as e:
+        logger.error(f"error occured while deleting the chat history for user: {current_user['regular_login_token']['id']}, error: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Provided incorrect Details") 
+        
+@router.get('/chat')
+async def get_user_chat_history(current_user = Depends(token_validator), db:Session=Depends(get_db)):
+    chat_records = await get_user_chat_history_details(user_id=current_user["regular_login_token"]["id"], db=db)
+    return {"user_details": chat_records}
 
-
-   
+@router.post('/chat-with-doc')
+async def conversation_with_doc(request:Request,current_user = Depends(token_validator), db:Session=Depends(get_db)):
+    chat_context = request.json()
+    print(f"chat_context: {chat_context}")
+    return {"message": "this is from LLM chat responding to user question regarding the document and its recommendataion: this needs to be implemented"}
+    # return ProjectScopingAgent.chat_with_doc(context=)

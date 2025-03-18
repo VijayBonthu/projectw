@@ -4,7 +4,7 @@ import { DarkModeProvider } from './context/DarkModeContext';
 
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
+import RegisterPage from './pages/Register';
 import Dashboard from './pages/Dashboard';
 
 // Create a client
