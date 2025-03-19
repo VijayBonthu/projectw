@@ -46,6 +46,7 @@ const Dashboard: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showSidebar, setShowSidebar] = useState(true);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Check authentication on component mount
   useEffect(() => {
@@ -678,12 +679,22 @@ const Dashboard: React.FC = () => {
               {/* Message input - fixed height at bottom */}
               <div className="flex-shrink-0 border-t border-white/10 backdrop-blur-sm bg-black/30 p-4 w-full">
                 <form onSubmit={handleSendMessage} className="flex space-x-2">
-                  <input
-                    type="text"
+                  <textarea
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage(e);
+                      }
+                    }}
                     placeholder="Ask a follow-up question..."
-                    className="flex-1 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    className="flex-1 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white 
+                      placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500
+                      min-h-[44px] max-h-[200px] overflow-y-auto resize-none"
+                    style={{ height: 'auto' }}
+                    rows={1}
+                    ref={textareaRef}
                   />
                   <button
                     type="submit"
