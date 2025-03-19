@@ -18,6 +18,7 @@ interface Conversation {
   title: string;
   created_at: string;
   messages: Message[];
+  document_id: string;
 }
 
 interface Recommendation {
@@ -90,7 +91,9 @@ const Dashboard: React.FC = () => {
         }
       });
 
-      setConversations(response.data);
+      // Make sure we're getting an array
+      const conversationsData = Array.isArray(response.data) ? response.data : [];
+      setConversations(conversationsData);
     } catch (error) {
       console.error('Error fetching conversations:', error);
       setError('Failed to load your conversations');
@@ -153,7 +156,7 @@ const Dashboard: React.FC = () => {
         return;
       }
 
-      // 1. Upload the file
+      // Upload the file and get initial analysis
       const uploadResponse = await axios.post(`${API_URL}/upload`, formData, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -164,11 +167,19 @@ const Dashboard: React.FC = () => {
           setUploadProgress(percentCompleted);
         }
       });
-
+      
       setIsProcessing(true);
       
-      // Get document_id from the upload response
+      // Get document_id and other data from the upload response
       const documentId = uploadResponse.data.document_id;
+      const chatTitle = uploadResponse.data.title || `Analysis of ${file.name}`;
+      
+      // Create a message from the upload response
+      const initialMessage: Message = {
+        role: "assistant", // Upload response is from assistant/system
+        content: uploadResponse.data.message || "Document processed successfully",
+        timestamp: new Date().toISOString()
+      };
       
       // Get user_id from localStorage or fetch it
       let userId = localStorage.getItem('user_id');
@@ -191,52 +202,13 @@ const Dashboard: React.FC = () => {
         }
       }
       
-      // 2. Get initial analysis via chat-with-doc
-      const initialUserMessage: Message = {
-        role: "user",
-        content: "Analyze this document and provide recommendations",
-        timestamp: new Date().toISOString()
-      };
-      
-      const chatResponse = await axios.post(`${API_URL}/chat-with-doc`, 
-        { 
-          message: initialUserMessage,
-          document_id: documentId
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        }
-      );
-      
-      // Format the AI response correctly
-      const aiResponse: Message = {
-        role: "assistant",
-        content: chatResponse.data.message || chatResponse.data, // Handle different response formats
-        timestamp: new Date().toISOString()
-      };
-      
-      // Extract recommendations if available
-      try {
-        if (aiResponse.content && aiResponse.content.includes('```json')) {
-          const jsonMatch = aiResponse.content.match(/```json\n([\s\S]*?)\n```/);
-          if (jsonMatch && jsonMatch[1]) {
-            const recommendationData = JSON.parse(jsonMatch[1]);
-            setRecommendation(recommendationData);
-          }
-        }
-      } catch (error) {
-        console.error('Error parsing recommendation data:', error);
-      }
-      
-      // 3. Save the conversation to the database
+      // Save the initial conversation to the database
       const saveResponse = await axios.post(`${API_URL}/chat`, 
         { 
           user_id: userId,
           document_id: documentId,
-          message: [initialUserMessage, aiResponse], // Properly formatted messages
-          title: `Analysis of ${file.name}`
+          message: [initialMessage], // Just the initial message from upload
+          title: chatTitle
         },
         {
           headers: {
@@ -245,19 +217,19 @@ const Dashboard: React.FC = () => {
         }
       );
       
-      // Create a properly structured conversation from the response
+      // Create a properly structured conversation
       const newConversation: Conversation = {
         id: saveResponse.data.id || saveResponse.data.chat_history_id,
-        title: `Analysis of ${file.name}`,
+        title: chatTitle,
         created_at: new Date().toISOString(),
-        messages: [initialUserMessage, aiResponse]
+        messages: [initialMessage],
+        document_id: documentId
       };
       
-      // Set active conversation with the properly formatted conversation object
       setActiveConversation(newConversation);
       
-      // Also add this conversation to the conversations list
-      setConversations(prev => [newConversation, ...prev]);
+      // Refresh conversations list
+      fetchConversations();
       
       // Reset file state
       setFile(null);
@@ -271,6 +243,21 @@ const Dashboard: React.FC = () => {
       setIsUploading(false);
       setIsProcessing(false);
     }
+  };
+
+  // Add this function
+  const autoResizeTextarea = () => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+    }
+  };
+
+  // Update the message change handler
+  const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setMessage(e.target.value);
+    setTimeout(autoResizeTextarea, 0);
   };
 
   // Handle sending a message
@@ -296,6 +283,9 @@ const Dashboard: React.FC = () => {
     });
     
     setMessage('');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
     
     try {
       const token = localStorage.getItem('token') || 
@@ -324,11 +314,12 @@ const Dashboard: React.FC = () => {
         }
       }
 
-      // 1. First send message to chat-with-doc to get AI response
+      // Send message to chat-with-doc to get AI response
       const chatResponse = await axios.post(`${API_URL}/chat-with-doc`, 
         { 
           message: newMessage,
-          chat_history_id: activeConversation.id
+          chat_history_id: activeConversation.id,
+          document_id: activeConversation.document_id
         },
         {
           headers: {
@@ -340,25 +331,28 @@ const Dashboard: React.FC = () => {
       // Format the AI response correctly
       const aiResponse: Message = {
         role: "assistant",
-        content: chatResponse.data.message || chatResponse.data,
+        content: typeof chatResponse.data === 'string' 
+          ? chatResponse.data 
+          : chatResponse.data.message || "Sorry, I couldn't process that request.",
         timestamp: new Date().toISOString()
       };
       
       // Update UI with AI response
-      setActiveConversation(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          messages: [...prev.messages, aiResponse]
-        };
-      });
+      const updatedConversation = {
+        ...activeConversation,
+        messages: [...activeConversation.messages, newMessage, aiResponse]
+      };
       
-      // 2. Then save the conversation to the database
+      setActiveConversation(updatedConversation);
+      
+      // Then save the entire conversation history to the database
       await axios.post(`${API_URL}/chat`, 
         { 
           chat_history_id: activeConversation.id,
           user_id: userId,
-          message: [newMessage, aiResponse] // Properly formatted messages
+          document_id: activeConversation.document_id,
+          message: updatedConversation.messages, // Send the ENTIRE message history
+          title: activeConversation.title
         },
         {
           headers: {
@@ -681,7 +675,7 @@ const Dashboard: React.FC = () => {
                 <form onSubmit={handleSendMessage} className="flex space-x-2">
                   <textarea
                     value={message}
-                    onChange={(e) => setMessage(e.target.value)}
+                    onChange={handleMessageChange}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
@@ -820,18 +814,6 @@ const Dashboard: React.FC = () => {
           )}
         </main>
       </div>
-
-      {/* Add CSS for animations */}
-      <style jsx>{`
-        @keyframes pulse {
-          0%, 100% {
-            opacity: 0.2;
-          }
-          50% {
-            opacity: 0.8;
-          }
-        }
-      `}</style>
     </div>
   );
 };
