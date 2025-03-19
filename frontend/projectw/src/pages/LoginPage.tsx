@@ -41,10 +41,13 @@ const LoginPage: React.FC = () => {
             // Set the token in the header first
             axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
             
-            // Test the token with an API call (adjust endpoint as needed)
-            const response = await axios.get(`${API_URL}/verify-token`);
+            // Test the token with an API call
+            const response = await axios.get(`${API_URL}/decode_token/${token}`);
             
             if (response.status === 200) {
+              // Store the user ID for future API calls
+              localStorage.setItem('user_id', response.data.id);
+              
               // Token is valid, use it to login
               login(token);
               navigate('/dashboard');
@@ -55,6 +58,7 @@ const LoginPage: React.FC = () => {
             localStorage.removeItem('token');
             localStorage.removeItem('regular_token');
             localStorage.removeItem('google_auth_token');
+            localStorage.removeItem('user_id'); // Also remove user_id
             delete axios.defaults.headers.common['Authorization'];
           }
         }

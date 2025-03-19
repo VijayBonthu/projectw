@@ -51,7 +51,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = () => {
+    // Clear all tokens and user data
     localStorage.removeItem('token');
+    localStorage.removeItem('regular_token');
+    localStorage.removeItem('google_auth_token');
+    localStorage.removeItem('user_id');
+    
+    // Remove authorization headers
+    delete axios.defaults.headers.common['Authorization'];
+    
+    // Update authentication state
     setIsAuthenticated(false);
     setUser(null);
   };

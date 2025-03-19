@@ -133,3 +133,18 @@ async def get_user_chat_history_details(user_id:str, db:Session):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Internal server error")
+
+async def get_single_user_chat_history(user_id:str, chat_history_id:str, db:Session):
+    try:
+        user_chat_details = db.query(models.ChatHistory).filter(and_(models.ChatHistory.user_id == user_id, models.ChatHistory.active_tag == "True", models.ChatHistory.chat_history_id == chat_history_id)).first()
+        if user_chat_details:
+            full_history = {}
+            full_history["chat_history_id"] = user_chat_details.chat_history_id
+            full_history["title"] = user_chat_details.title
+            full_history["modified_at"] = user_chat_details.modified_at
+            full_history["message"] = user_chat_details.message
+            return full_history
+        else:
+            raise HTTPException(status_code=404, detail="Chat history not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error")

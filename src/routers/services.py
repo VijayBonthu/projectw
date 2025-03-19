@@ -2,7 +2,7 @@ from fastapi import File, UploadFile, Form, Depends, APIRouter, HTTPException, s
 from fastapi.responses import HTMLResponse
 import os
 from utils.token_generation import token_validator
-from utils.chat_history import save_chat_history, delete_chat_history, get_user_chat_history_details
+from utils.chat_history import save_chat_history, delete_chat_history, get_user_chat_history_details,get_single_user_chat_history
 from getdata import ExtractText
 from processdata import AccessLLM
 from config import settings
@@ -398,6 +398,11 @@ async def chat_delete(chat_id:str,db:Session=Depends(get_db),current_user:dict=D
 async def get_user_chat_history(current_user = Depends(token_validator), db:Session=Depends(get_db)):
     chat_records = await get_user_chat_history_details(user_id=current_user["regular_login_token"]["id"], db=db)
     return {"user_details": chat_records}
+
+@router.get('/chat/{chat_history_id}')
+async def get_user_chat_history_by_id(chat_history_id:str,current_user = Depends(token_validator), db:Session=Depends(get_db)):
+    single_record = await get_single_user_chat_history(user_id=current_user["regular_login_token"]["id"], chat_history_id=chat_history_id, db=db)
+    return {"user_details": single_record}
 
 @router.post('/chat-with-doc')
 async def conversation_with_doc(request:Request,current_user = Depends(token_validator), db:Session=Depends(get_db)):
