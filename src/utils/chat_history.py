@@ -124,6 +124,7 @@ async def get_user_chat_history_details(user_id:str, db:Session):
             full_chat_history = []
             for details in user_chat_details:
                 full_history = {}
+                full_history["document_id"] = details.document_id
                 full_history["chat_history_id"] = details.chat_history_id
                 full_history["title"] = details.title
                 full_history["modified_at"] = details.modified_at
@@ -142,6 +143,7 @@ async def get_single_user_chat_history(user_id:str, chat_history_id:str, db:Sess
         if user_chat_details:
             full_history = {}
             full_history["chat_history_id"] = user_chat_details.chat_history_id
+            full_history["document_id"] = user_chat_details.document_id
             full_history["title"] = user_chat_details.title
             full_history["modified_at"] = user_chat_details.modified_at
             full_history["message"] = user_chat_details.message

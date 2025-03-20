@@ -53,6 +53,7 @@ const Dashboard: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [message, setMessage] = useState('');
@@ -71,6 +72,10 @@ const Dashboard: React.FC = () => {
     older: []
   });
   const [isLoadingConversation, setIsLoadingConversation] = useState(false);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  const [renamingConversation, setRenamingConversation] = useState<string | null>(null);
+  const [newTitle, setNewTitle] = useState('');
 
   // Check authentication on component mount
   useEffect(() => {
@@ -429,7 +434,10 @@ const Dashboard: React.FC = () => {
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!message.trim() || !activeConversation) return;
+    // Check BOTH message content AND active conversation existence
+    if (!message.trim() || !activeConversation || isSendingMessage) return;
+    
+    setIsSendingMessage(true);
     
     try {
       // Get the token for authorization
@@ -454,7 +462,9 @@ const Dashboard: React.FC = () => {
           });
           userId = userResponse.data.id;
           // Store for future use
+          if (typeof userId === 'string') {
           localStorage.setItem('user_id', userId);
+          }
         } catch (error) {
           console.error('Error decoding token:', error);
           setError('Failed to authenticate user');
@@ -511,7 +521,7 @@ const Dashboard: React.FC = () => {
       // Create the actual assistant message from the response
       const assistantMessage: Message = {
         role: 'assistant',
-        content: chatResponse.data.response || "Sorry, I couldn't generate a response.",
+        content: chatResponse.data.message || "Resources are currently busy. Please try again later.",
         timestamp: new Date().toISOString()
       };
       
@@ -561,6 +571,8 @@ const Dashboard: React.FC = () => {
       }
       
       setError('Failed to send message');
+    } finally {
+      setIsSendingMessage(false);
     }
   };
 
@@ -602,6 +614,166 @@ const Dashboard: React.FC = () => {
     
     // Navigate to login page
     navigate('/login');
+  };
+
+  // Add function to delete conversation
+  const deleteConversation = async (chatId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent triggering conversation selection
+    
+    if (window.confirm('Are you sure you want to delete this conversation?')) {
+      try {
+        const token = localStorage.getItem('token') || 
+                     localStorage.getItem('regular_token') || 
+                     localStorage.getItem('google_auth_token');
+                     
+        if (!token) {
+          console.error("No token found");
+          return;
+        }
+        
+        await axios.delete(`${API_URL}/chat/${chatId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        // If deleted the active conversation, clear it
+        if (activeConversation?.id === chatId) {
+          setActiveConversation(null);
+        }
+        
+        // Refresh the conversations list
+        fetchConversations();
+        
+        // Close any open dropdown
+        setActiveDropdown(null);
+        
+      } catch (error) {
+        console.error('Error deleting conversation:', error);
+        setError('Failed to delete conversation');
+      }
+    }
+  };
+
+  // Add function to rename conversation
+  const renameConversation = async (chatId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent triggering conversation selection
+    
+    // Set the conversation as being renamed and show input
+    setRenamingConversation(chatId);
+    
+    // Get current title to pre-fill
+    const conversation = Object.values(groupedConversations)
+      .flat()
+      .find(conv => conv.chat_history_id === chatId);
+      
+    if (conversation) {
+      setNewTitle(conversation.title);
+    }
+    
+    // Close dropdown
+    setActiveDropdown(null);
+  };
+
+  // Function to handle saving the new title
+  const saveNewTitle = async (chatId: string, e: React.FormEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!newTitle.trim()) return;
+    
+    try {
+      setIsLoadingConversation(true); // Show loading state
+      
+      const token = localStorage.getItem('token') || 
+                   localStorage.getItem('regular_token') || 
+                   localStorage.getItem('google_auth_token');
+                   
+      if (!token) {
+        console.error("No token found");
+        return;
+      }
+      
+      // First, get the complete conversation data if we don't have it already
+      let conversation: Conversation | null = null;
+      
+      // Check if this is the active conversation (already loaded)
+      if (activeConversation?.id === chatId) {
+        conversation = activeConversation;
+      } else {
+        // Need to fetch the complete conversation
+        const response = await axios.get(`${API_URL}/chat/${chatId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (response.data) {
+          conversation = {
+            id: response.data.chat_history_id,
+            title: response.data.title,
+            created_at: response.data.created_at,
+            messages: response.data.messages || [],
+            document_id: response.data.document_id
+          };
+        }
+      }
+      
+      if (!conversation) {
+        throw new Error("Could not get conversation data");
+      }
+      
+      // Get user ID from localStorage
+      const userId = localStorage.getItem('user_id');
+      
+      if (!userId) {
+        throw new Error("User ID not found");
+      }
+      
+      // Prepare the update payload with ALL required fields
+      const updatePayload = {
+        chat_history_id: chatId,
+        title: newTitle.trim(),
+        document_id: conversation.document_id,
+        user_id: userId,
+        message: conversation.messages
+      };
+      
+      // Send the update request
+      await axios.post(`${API_URL}/chat`, updatePayload, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      // Update active conversation title if this is the active one
+      if (activeConversation?.id === chatId) {
+        setActiveConversation({
+          ...activeConversation,
+          title: newTitle.trim()
+        });
+      }
+      
+      // Refresh conversations to get updated title in the sidebar
+      fetchConversations();
+      
+      // Clear renaming state
+      setRenamingConversation(null);
+      setNewTitle('');
+      
+    } catch (error) {
+      console.error('Error renaming conversation:', error);
+      setError('Failed to rename conversation: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setIsLoadingConversation(false);
+    }
+  };
+
+  // Cancel renaming
+  const cancelRenaming = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenamingConversation(null);
+    setNewTitle('');
   };
 
   return (
@@ -657,7 +829,7 @@ const Dashboard: React.FC = () => {
               className="p-2.5 rounded-lg bg-gradient-to-br from-indigo-500/10 to-purple-500/10 
                 hover:from-indigo-500/20 hover:to-purple-500/20 border border-white/5 
                 transition-all duration-300 text-gray-200 hover:text-white
-                hover:shadow-md hover:shadow-purple-500/10"
+                hover:shadow-md hover:shadow-purple-500/10 mt-0.1"
               title="New Analysis"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -744,119 +916,115 @@ const Dashboard: React.FC = () => {
                     <p className="text-sm mt-2">Upload a document to get started</p>
                 </div>
                 ) : (
-                <div className="space-y-4">
-                    {/* Today's conversations */}
-                    {groupedConversations.today.length > 0 && (
-                      <div>
-                        <h3 className="text-sm font-medium text-gray-400 mb-2 uppercase tracking-wider">Today</h3>
-                        <ul className="space-y-2">
-                          {groupedConversations.today.map(conversation => (
-                            <li key={conversation.chat_history_id}>
-                  <button
-                                onClick={() => selectConversation(conversation.chat_history_id)}
-                                className={`w-full text-left p-3 rounded-lg transition-all duration-200 
-                                ${activeConversation?.id === conversation.chat_history_id 
-                                  ? 'bg-white/20 border border-purple-500/30' 
-                                  : 'hover:bg-white/10 border border-transparent'}`}
-                                title={conversation.title}
-                              >
-                                <div className="font-medium truncate max-w-full text-fade">
-                                  {conversation.title}
-                                </div>
-                                <div className="text-xs text-gray-400 mt-1">
-                                  {new Date(conversation.modified_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                </div>
-                  </button>
-                            </li>
+                <div className="mt-6 space-y-1.5">
+                  {Object.entries(groupedConversations).map(([period, convs]) => 
+                    convs.length > 0 && (
+                      <div key={period} className="mb-2.5">
+                        <h3 className="text-xs font-medium text-gray-400 uppercase mb-1 px-3">
+                          {period}
+                        </h3>
+                        <div className="space-y-0.5">
+                          {convs.map(conv => (
+                            <div key={conv.chat_history_id} className="relative">
+                              {renamingConversation === conv.chat_history_id ? (
+                                // Rename form
+                                <form 
+                                  onSubmit={(e) => saveNewTitle(conv.chat_history_id, e)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="px-2.5 py-1 bg-gray-800/70 rounded-md"
+                                >
+                                  <input
+                                    type="text"
+                                    value={newTitle}
+                                    onChange={(e) => setNewTitle(e.target.value)}
+                                    className="w-full text-xs bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                    autoFocus
+                                  />
+                                  <div className="flex mt-1 justify-end space-x-1">
+                                    <button
+                                      type="button"
+                                      onClick={cancelRenaming}
+                                      className="text-xs px-2 py-0.5 text-gray-300 hover:text-white"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="submit"
+                                      className="text-xs px-2 py-0.5 bg-purple-600 rounded text-white hover:bg-purple-500"
+                                    >
+                                      Save
+                                    </button>
+                                  </div>
+                                </form>
+                              ) : (
+                                // Normal conversation button
+                                <button
+                                  onClick={() => selectConversation(conv.chat_history_id)}
+                                  className={`w-full text-left px-2.5 py-1 rounded-md transition-colors group
+                                    ${activeConversation?.id === conv.chat_history_id 
+                                      ? 'bg-purple-500/20 text-white' 
+                                      : 'text-gray-300 hover:bg-white/5'
+                                    }
+                                  `}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center flex-1 min-w-0">
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1.5 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                                      </svg>
+                                      <span className="truncate text-xs">{conv.title}</span>
+                                    </div>
+                                    
+                                    {/* Horizontal ellipsis menu button */}
+                                    <div className="relative flex-shrink-0">
+                                      <button 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setActiveDropdown(activeDropdown === conv.chat_history_id ? null : conv.chat_history_id);
+                                        }}
+                                        className={`p-1 rounded-full ${activeDropdown === conv.chat_history_id ? 'bg-white/10' : 'opacity-0 group-hover:opacity-100'} hover:bg-white/10 transition-opacity`}
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
+                                        </svg>
+                                      </button>
+                                      
+                                      {/* Dropdown menu */}
+                                      {activeDropdown === conv.chat_history_id && (
+                                        <div className="absolute right-0 mt-1 w-32 rounded-md shadow-lg bg-gray-800 ring-1 ring-black ring-opacity-5 z-10">
+                                          <div className="py-1">
+                                            <button
+                                              onClick={(e) => renameConversation(conv.chat_history_id, e)}
+                                              className="flex items-center px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white w-full text-left"
+                                            >
+                                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-2 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                              </svg>
+                                              Rename
+                                            </button>
+                                            <button
+                                              onClick={(e) => deleteConversation(conv.chat_history_id, e)}
+                                              className="flex items-center px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white w-full text-left"
+                                            >
+                                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-2 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                              </svg>
+                                              Delete
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </button>
+                              )}
+                            </div>
                           ))}
-                        </ul>
+                        </div>
                       </div>
-                    )}
-                    
-                    {/* Yesterday's conversations */}
-                    {groupedConversations.yesterday.length > 0 && (
-                      <div>
-                        <h3 className="text-sm font-medium text-gray-400 mb-2 uppercase tracking-wider">Yesterday</h3>
-                        <ul className="space-y-2">
-                          {groupedConversations.yesterday.map(conversation => (
-                            <li key={conversation.chat_history_id}>
-                              <button
-                                onClick={() => selectConversation(conversation.chat_history_id)}
-                                className={`w-full text-left p-3 rounded-lg transition-all duration-200 
-                                ${activeConversation?.id === conversation.chat_history_id 
-                                  ? 'bg-white/20 border border-purple-500/30' 
-                                  : 'hover:bg-white/10 border border-transparent'}`}
-                                title={conversation.title}
-                              >
-                                <div className="font-medium truncate max-w-full text-fade">
-                                  {conversation.title}
-                      </div>
-                                <div className="text-xs text-gray-400 mt-1">
-                                  {new Date(conversation.modified_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                </div>
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    
-                    {/* Last week's conversations */}
-                    {groupedConversations.lastWeek.length > 0 && (
-                      <div>
-                        <h3 className="text-sm font-medium text-gray-400 mb-2 uppercase tracking-wider">Last 7 Days</h3>
-                        <ul className="space-y-2">
-                          {groupedConversations.lastWeek.map(conversation => (
-                            <li key={conversation.chat_history_id}>
-                      <button
-                                onClick={() => selectConversation(conversation.chat_history_id)}
-                                className={`w-full text-left p-3 rounded-lg transition-all duration-200 
-                                ${activeConversation?.id === conversation.chat_history_id 
-                                  ? 'bg-white/20 border border-purple-500/30' 
-                                  : 'hover:bg-white/10 border border-transparent'}`}
-                                title={conversation.title}
-                              >
-                                <div className="font-medium truncate max-w-full text-fade">
-                                  {conversation.title}
-                                </div>
-                                <div className="text-xs text-gray-400 mt-1">
-                                  {new Date(conversation.modified_at).toLocaleDateString()}
-                                </div>
-                      </button>
-                            </li>
-                          ))}
-                        </ul>
-                    </div>
+                    )
                   )}
-                  
-                    {/* Older conversations */}
-                    {groupedConversations.older.length > 0 && (
-                      <div>
-                        <h3 className="text-sm font-medium text-gray-400 mb-2 uppercase tracking-wider">Older</h3>
-                        <ul className="space-y-2">
-                          {groupedConversations.older.map(conversation => (
-                            <li key={conversation.chat_history_id}>
-                  <button
-                                onClick={() => selectConversation(conversation.chat_history_id)}
-                                className={`w-full text-left p-3 rounded-lg transition-all duration-200 
-                                ${activeConversation?.id === conversation.chat_history_id 
-                                  ? 'bg-white/20 border border-purple-500/30' 
-                                  : 'hover:bg-white/10 border border-transparent'}`}
-                                title={conversation.title}
-                              >
-                                <div className="font-medium truncate max-w-full text-fade">
-                                  {conversation.title}
-                                </div>
-                                <div className="text-xs text-gray-400 mt-1">
-                                  {new Date(conversation.modified_at).toLocaleDateString()}
-                                </div>
-                  </button>
-                            </li>
-                          ))}
-                        </ul>
                 </div>
-                    )}
-              </div>
                 )}
             </div>
             </div>
@@ -1004,16 +1172,23 @@ const Dashboard: React.FC = () => {
                   />
           <button 
                     type="submit"
-                    disabled={!message.trim()}
+                    disabled={!message.trim() || isSendingMessage}
                     className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg 
                       border border-purple-500/30 shadow-md text-white font-medium
                       hover:from-blue-500 hover:to-purple-500 focus:outline-none
                       disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
+                    {isSendingMessage ? (
+                      <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                  </button>
                 </form>
               </div>
             </div>
