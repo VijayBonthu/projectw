@@ -130,9 +130,10 @@ async def get_user_chat_history_details(user_id:str, db:Session):
                 full_chat_history.append(full_history)
             return full_chat_history
         else:
-            raise HTTPException(status_code=404, detail="Chat history not found")
+            raise HTTPException(status_code=404, detail=f"Chat history not found")
+    except HTTPException:
+        raise
     except Exception as e:
-        db.rollback()
         raise HTTPException(status_code=500, detail=f"Internal server error")
 
 async def get_single_user_chat_history(user_id:str, chat_history_id:str, db:Session):
@@ -147,5 +148,7 @@ async def get_single_user_chat_history(user_id:str, chat_history_id:str, db:Sess
             return full_history
         else:
             raise HTTPException(status_code=404, detail="Chat history not found")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error")

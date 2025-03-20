@@ -214,6 +214,33 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  // Replace instances of this problematic code:
+  // localStorage.setItem('user_id', userId);
+
+  // With this safer version that handles the null case:
+  const decodeTokenAndSaveUserId = async (token: string) => {
+    try {
+      const response = await axios.get(`${API_URL}/decode_token/${token}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.data && response.data.id) {
+        const userId = response.data.id;
+        // Store for future use with null check
+        if (userId) {
+          localStorage.setItem('user_id', userId);
+        }
+        return userId;
+      }
+    } catch (error) {
+      console.error('Error decoding token:', error);
+      setError('Failed to authenticate user');
+    }
+    return null;
+  };
+
   // Handle file upload for document analysis
   const handleUpload = async () => {
     if (!file) {
@@ -229,16 +256,23 @@ const Dashboard: React.FC = () => {
     formData.append('file', file);
 
     try {
-      const token = localStorage.getItem('token') || 
-                    localStorage.getItem('regular_token') || 
-                    localStorage.getItem('google_auth_token');
+      const token = localStorage.getItem('token') || localStorage.getItem('regular_token') || localStorage.getItem('google_auth_token');
       
       if (!token) {
-        logout();
-        navigate('/login');
-        return;
+        throw new Error('No authentication token found');
       }
-
+      
+      // Get userId from localStorage instead of making an API call
+      let userId = localStorage.getItem('user_id');
+      
+      // Only decode token if userId is not in localStorage
+      if (!userId) {
+        userId = await decodeTokenAndSaveUserId(token);
+        if (!userId) {
+          throw new Error('Could not get user ID');
+        }
+      }
+      
       // Upload the file and get initial analysis
       const uploadResponse = await axios.post(`${API_URL}/upload`, formData, {
         headers: {
@@ -263,27 +297,6 @@ const Dashboard: React.FC = () => {
         content: uploadResponse.data.message || "Document processed successfully",
         timestamp: new Date().toISOString()
       };
-      
-      // Get user_id from localStorage or fetch it
-      let userId = localStorage.getItem('user_id');
-      if (!userId) {
-        try {
-          const userResponse = await axios.get(`${API_URL}/decode_token/${token}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          });
-          userId = userResponse.data.id;
-          // Store for future use
-          localStorage.setItem('user_id', userId);
-        } catch (error) {
-          console.error('Error decoding token:', error);
-          setError('Failed to authenticate user');
-          setIsUploading(false);
-          setIsProcessing(false);
-          return;
-        }
-      }
       
       // Save the initial conversation to the database
       const saveResponse = await axios.post(`${API_URL}/chat`, 

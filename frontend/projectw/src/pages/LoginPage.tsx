@@ -11,74 +11,78 @@ const LoginPage: React.FC = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [checkingToken, setCheckingToken] = useState(true);
+  const [hasNavigated, setHasNavigated] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated, login } = useAuth();
 
-  // Check for existing token and verify it's valid on component mount
+  console.log("LoginPage render state:", { 
+    isAuthenticated, 
+    hasNavigated, 
+    checkingToken 
+  });
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    console.log("Navigation effect running:", { 
+      isAuthenticated, 
+      hasNavigated 
+    });
+    
+    if (isAuthenticated && !hasNavigated) {
+      console.log("Attempting navigation to dashboard");
+      setHasNavigated(true);
+      navigate('/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, hasNavigated, navigate]);
+
+  // Check for existing token
   useEffect(() => {
     const checkExistingToken = async () => {
+      console.log("checkExistingToken running:", { 
+        isAuthenticated, 
+        hasNavigated,
+        token: localStorage.getItem('regular_token') // Add this to check token
+      });
+
+      if (isAuthenticated || hasNavigated) {
+        console.log("Skipping token check - already authenticated or navigated");
+        setCheckingToken(false);
+        return;
+      }
+
       try {
-        // First check for token in URL parameters (for OAuth redirect)
         const params = new URLSearchParams(location.search);
         const urlToken = params.get('token');
         
         if (urlToken) {
-          // Save the token and redirect to dashboard
-          login(urlToken);
-          navigate('/dashboard');
+          console.log("Found URL token, attempting login");
+          await login(urlToken);
+          console.log("URL token login completed, isAuthenticated:", isAuthenticated);
           return;
         }
 
-        // Then check localStorage for existing tokens
         const token = localStorage.getItem('token') || 
-                      localStorage.getItem('regular_token') || 
-                      localStorage.getItem('google_auth_token');
+                     localStorage.getItem('regular_token') || 
+                     localStorage.getItem('google_auth_token');
         
         if (token) {
-          // Verify token is valid with a simple API call
-          try {
-            // Set the token in the header first
-            axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-            
-            // Test the token with an API call
-            const response = await axios.get(`${API_URL}/decode_token/${token}`);
-            
-            if (response.status === 200) {
-              // Store the user ID for future API calls
-              localStorage.setItem('user_id', response.data.id);
-              
-              // Token is valid, use it to login
-              login(token);
-              navigate('/dashboard');
-              return;
-            }
-          } catch (err) {
-            // If token verification fails, clear it and continue to login form
-            localStorage.removeItem('token');
-            localStorage.removeItem('regular_token');
-            localStorage.removeItem('google_auth_token');
-            localStorage.removeItem('user_id'); // Also remove user_id
-            delete axios.defaults.headers.common['Authorization'];
-          }
+          console.log("Found stored token, attempting login");
+          await login(token);
+          console.log("Stored token login completed, isAuthenticated:", isAuthenticated);
         }
+      } catch (error) {
+        console.error("Error during token verification:", error);
+        localStorage.removeItem('token');
+        localStorage.removeItem('regular_token');
+        localStorage.removeItem('google_auth_token');
       } finally {
-        // Always set checkingToken to false when done
         setCheckingToken(false);
       }
     };
 
     checkExistingToken();
-  }, [login, navigate, location]);
-
-  // If we're still verifying the token, show loading spinner
-  if (checkingToken) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e]">
-        <div className="animate-spin h-12 w-12 border-4 border-white rounded-full border-t-transparent"></div>
-      </div>
-    );
-  }
+  }, [location.search, isAuthenticated, hasNavigated, login]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,21 +90,37 @@ const LoginPage: React.FC = () => {
     setIsLoading(true);
 
     try {
+      console.log("🔑 Attempting manual login");
       const response = await axios.post(`${API_URL}/login`, {
         email_address: email,
         password: password
       });
 
       const { access_token } = response.data;
-      localStorage.setItem('regular_token', access_token);
-      navigate('/dashboard');
+      console.log("✅ Login API call successful, token:", access_token.substring(0, 10) + "...");
+      
+      const loginSuccess = await login(access_token);
+      console.log("🔍 Login completed:", { loginSuccess, isAuthenticated });
+      
+      if (!loginSuccess) {
+        throw new Error("Login failed");
+      }
     } catch (err) {
+      console.error("❌ Login error:", err);
       setError('Invalid email or password');
-      console.error('Login error:', err);
     } finally {
       setIsLoading(false);
     }
   };
+
+  // If still checking token, show loading spinner
+  if (checkingToken) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e]">
+        <div className="animate-spin h-12 w-12 border-4 border-white rounded-full border-t-transparent"></div>
+      </div>
+    );
+  }
 
   const handleGoogleLogin = () => {
     // Open the Google auth in a popup window instead of redirecting
