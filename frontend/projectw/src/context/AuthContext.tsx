@@ -42,7 +42,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     localStorage.removeItem('google_auth_token');
     
     // Set the new token
-    localStorage.setItem('token', token);
+    localStorage.setItem('regular_token', token);
     
     // Update Authorization header
     axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
@@ -52,7 +52,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const logout = () => {
     // Clear all tokens and user data
-    localStorage.removeItem('token');
+    // localStorage.removeItem('token');
     localStorage.removeItem('regular_token');
     localStorage.removeItem('google_auth_token');
     localStorage.removeItem('user_id');

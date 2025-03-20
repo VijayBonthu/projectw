@@ -32,6 +32,21 @@ interface Recommendation {
   summary: string;
 }
 
+// Enhanced types for conversation data
+interface ConversationMetadata {
+  chat_history_id: string;
+  title: string;
+  modified_at: string;
+  document_id?: string;
+}
+
+interface GroupedConversations {
+  today: ConversationMetadata[];
+  yesterday: ConversationMetadata[];
+  lastWeek: ConversationMetadata[];
+  older: ConversationMetadata[];
+}
+
 const Dashboard: React.FC = () => {
   const { isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
@@ -46,8 +61,16 @@ const Dashboard: React.FC = () => {
   const [error, setError] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [showSidebar, setShowSidebar] = useState(true);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [groupedConversations, setGroupedConversations] = useState<GroupedConversations>({
+    today: [],
+    yesterday: [],
+    lastWeek: [],
+    older: []
+  });
+  const [isLoadingConversation, setIsLoadingConversation] = useState(false);
 
   // Check authentication on component mount
   useEffect(() => {
@@ -58,6 +81,23 @@ const Dashboard: React.FC = () => {
       fetchConversations();
     }
   }, [isAuthenticated, navigate]);
+
+  // Simplify the resize effect
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+    };
+    
+    // Set initial state
+    handleResize();
+    
+    // Add event listener
+    window.addEventListener('resize', handleResize);
+    
+    // Cleanup
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Modified scrollToBottom function for better scroll behavior
   const scrollToBottom = () => {
@@ -74,30 +114,73 @@ const Dashboard: React.FC = () => {
   // Fetch user's conversations with full content
   const fetchConversations = async () => {
     try {
-      const token = localStorage.getItem('token') || 
-                    localStorage.getItem('regular_token') || 
-                    localStorage.getItem('google_auth_token');
-      
-      if (!token) {
-        logout();
-        navigate('/login');
+      // Get the token for authentication
+    const token = localStorage.getItem('token') || 
+                  localStorage.getItem('regular_token') || 
+                  localStorage.getItem('google_auth_token');
+    
+    if (!token) {
+        console.error("No token found");
         return;
       }
-
-      // This endpoint returns all chat histories with full content
+      
+      // Set the authorization header explicitly
       const response = await axios.get(`${API_URL}/chat`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
-
-      // Make sure we're getting an array
-      const conversationsData = Array.isArray(response.data) ? response.data : [];
-      setConversations(conversationsData);
+      
+      if (response.data && response.data.user_details) {
+        // Sort conversations by modified_at descending (newest first)
+        const sortedConversations = [...response.data.user_details].sort((a, b) => 
+          new Date(b.modified_at).getTime() - new Date(a.modified_at).getTime()
+        );
+        
+        // Group conversations by date
+        const grouped = groupConversationsByDate(sortedConversations);
+        setGroupedConversations(grouped);
+        
+        // Update the old conversations array for the collapsed sidebar
+        // Only show the 5 most recent conversations in collapsed view
+        const conversationsArray = sortedConversations.slice(0, 5).map(conv => ({
+          id: conv.chat_history_id,
+          title: conv.title,
+          created_at: conv.modified_at,
+          messages: [],
+          document_id: conv.document_id || ''
+        }));
+        
+        setConversations(conversationsArray);
+      }
     } catch (error) {
       console.error('Error fetching conversations:', error);
-      setError('Failed to load your conversations');
     }
+  };
+
+  // Helper function to group conversations by time period
+  const groupConversationsByDate = (conversations: ConversationMetadata[]): GroupedConversations => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    const lastWeekStart = new Date(today);
+    lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+    
+    return {
+      today: conversations.filter(conv => new Date(conv.modified_at) >= today),
+      yesterday: conversations.filter(conv => {
+        const date = new Date(conv.modified_at);
+        return date >= yesterday && date < today;
+      }),
+      lastWeek: conversations.filter(conv => {
+        const date = new Date(conv.modified_at);
+        return date >= lastWeekStart && date < yesterday;
+      }),
+      older: conversations.filter(conv => new Date(conv.modified_at) < lastWeekStart)
+    };
   };
 
   // Handle file selection
@@ -142,7 +225,7 @@ const Dashboard: React.FC = () => {
     setUploadProgress(0);
     setError('');
 
-    const formData = new FormData();
+      const formData = new FormData();
     formData.append('file', file);
 
     try {
@@ -260,98 +343,181 @@ const Dashboard: React.FC = () => {
     setTimeout(autoResizeTextarea, 0);
   };
 
-  // Handle sending a message
+  // Improved selectConversation function with proper loading and parsing
+  const selectConversation = async (chatHistoryId: string) => {
+    try {
+      setIsLoadingConversation(true);
+      setError('');
+      
+      // Get the authentication token
+      const token = localStorage.getItem('token') || 
+                   localStorage.getItem('regular_token') || 
+                   localStorage.getItem('google_auth_token');
+      
+      if (!token) {
+        throw new Error("No authentication token found");
+      }
+      
+      // Fetch the specific conversation
+      const response = await axios.get(`${API_URL}/chat/${chatHistoryId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.data && response.data.user_details) {
+        const details = response.data.user_details;
+        
+        // Parse the messages array from the string
+        let messages: Message[] = [];
+        
+        try {
+          // Handle message parsing with error checking
+          if (typeof details.message === 'string') {
+            messages = JSON.parse(details.message);
+          } else if (Array.isArray(details.message)) {
+            messages = details.message;
+          } else {
+            console.error("Unexpected message format:", details.message);
+            messages = [];
+          }
+        } catch (e) {
+          console.error("Error parsing messages:", e);
+          messages = [];
+        }
+        
+        // Create a conversation object with the full data
+        const conversation: Conversation = {
+          id: details.chat_history_id,
+          title: details.title,
+          created_at: details.modified_at,
+          messages: messages,
+          document_id: details.document_id || ''
+        };
+        
+        setActiveConversation(conversation);
+        
+        // Auto-close sidebar on mobile
+        if (isMobile && sidebarExpanded) {
+          setSidebarExpanded(false);
+        }
+      } else {
+        throw new Error("Invalid response format");
+      }
+    } catch (error) {
+      console.error('Error loading conversation:', error);
+      setError('Failed to load conversation');
+    } finally {
+      setIsLoadingConversation(false);
+    }
+  };
+
+  // Improved handleSendMessage with /chat-with-doc integration
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!message.trim() || !activeConversation) return;
     
-    // Create message object
-    const newMessage: Message = {
-      role: 'user',
-      content: message,
-      timestamp: new Date().toISOString()
-    };
-    
-    // Optimistically add user message to UI
-    setActiveConversation(prev => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        messages: [...prev.messages, newMessage]
-      };
-    });
-    
-    setMessage('');
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
-    
     try {
+      // Get the token for authorization
       const token = localStorage.getItem('token') || 
-                    localStorage.getItem('regular_token') || 
-                    localStorage.getItem('google_auth_token');
+                   localStorage.getItem('regular_token') || 
+                   localStorage.getItem('google_auth_token');
       
       if (!token) {
-        logout();
-        navigate('/login');
-        return;
+        throw new Error("No authentication token found");
       }
-
-      // Get user_id from localStorage or fetch it
+      
+      // Get user ID from token or localStorage
       let userId = localStorage.getItem('user_id');
+      
       if (!userId) {
+        // Extract user ID from token if not already saved
         try {
-          const userResponse = await axios.get(`${API_URL}/decode_token/${token}`, {
+          const userResponse = await axios.get(`${API_URL}/auth/verifyToken`, {
             headers: {
               'Authorization': `Bearer ${token}`
             }
           });
           userId = userResponse.data.id;
+          // Store for future use
           localStorage.setItem('user_id', userId);
         } catch (error) {
           console.error('Error decoding token:', error);
+          setError('Failed to authenticate user');
+        return;
         }
       }
-
-      // Send message to chat-with-doc to get AI response
-      const chatResponse = await axios.post(`${API_URL}/chat-with-doc`, 
-        { 
-          message: newMessage,
+      
+      // Add the user message to the conversation
+      const newUserMessage: Message = {
+        role: 'user',
+        content: message,
+        timestamp: new Date().toISOString()
+      };
+      
+      // Create updated conversation with the new message
+      const updatedConversation = {
+        ...activeConversation,
+        messages: [...activeConversation.messages, newUserMessage]
+      };
+      
+      // Update the UI immediately with user message
+      setActiveConversation(updatedConversation);
+      setMessage('');
+      
+      // Create a placeholder for assistant's response
+      const assistantPlaceholder: Message = {
+        role: 'assistant',
+        content: '...',
+        timestamp: new Date().toISOString()
+      };
+      
+      // Show typing indicator
+      setActiveConversation({
+        ...updatedConversation,
+        messages: [...updatedConversation.messages, assistantPlaceholder]
+      });
+      
+      // Get response from AI using chat-with-doc endpoint
+      const chatResponse = await axios.post(
+        `${API_URL}/chat-with-doc`,
+        {
           chat_history_id: activeConversation.id,
-          document_id: activeConversation.document_id
+          document_id: activeConversation.document_id,
+          message: newUserMessage.content
         },
         {
           headers: {
-            'Authorization': `Bearer ${token}`
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
           }
         }
       );
       
-      // Format the AI response correctly
-      const aiResponse: Message = {
-        role: "assistant",
-        content: typeof chatResponse.data === 'string' 
-          ? chatResponse.data 
-          : chatResponse.data.message || "Sorry, I couldn't process that request.",
+      // Create the actual assistant message from the response
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: chatResponse.data.response || "Sorry, I couldn't generate a response.",
         timestamp: new Date().toISOString()
       };
       
-      // Update UI with AI response
-      const updatedConversation = {
+      // Final conversation state with real assistant response
+      const finalConversation = {
         ...activeConversation,
-        messages: [...activeConversation.messages, newMessage, aiResponse]
+        messages: [...updatedConversation.messages, assistantMessage]
       };
       
-      setActiveConversation(updatedConversation);
+      setActiveConversation(finalConversation);
       
-      // Then save the entire conversation history to the database
-      await axios.post(`${API_URL}/chat`, 
-        { 
+      // Save the conversation to the database
+      await axios.post(
+        `${API_URL}/chat`,
+        {
           chat_history_id: activeConversation.id,
           user_id: userId,
           document_id: activeConversation.document_id,
-          message: updatedConversation.messages, // Send the ENTIRE message history
+          message: finalConversation.messages,
           title: activeConversation.title
         },
         {
@@ -361,71 +527,27 @@ const Dashboard: React.FC = () => {
         }
       );
       
-      // Refresh conversations list to update titles
+      // Refresh the conversations list to update titles and order
       fetchConversations();
+      
     } catch (error) {
       console.error('Error sending message:', error);
-      setError('Failed to send message');
-    }
-  };
-
-  // Select a conversation from the sidebar
-  const selectConversation = async (conversationId: string) => {
-    try {
-      // Find the conversation in our already loaded data
-      const selectedConversation = conversations.find(conv => conv.id === conversationId);
       
-      if (selectedConversation) {
-        setActiveConversation(selectedConversation);
-        setRecommendation(null); // Clear any previous recommendation
+      // Remove the loading placeholder and show error
+      if (activeConversation) {
+        const messages = [...activeConversation.messages];
+        if (messages[messages.length - 1]?.role === 'assistant' && 
+            messages[messages.length - 1]?.content === '...') {
+          messages.pop(); // Remove placeholder
+        }
         
-        // Extract recommendations from the assistant's first response if available
-        if (selectedConversation.messages && selectedConversation.messages.length > 0) {
-          try {
-            // Find the first assistant message that contains JSON data
-            const assistantMessage = selectedConversation.messages.find(
-              msg => msg.role === 'assistant' && msg.content.includes('```json')
-            );
-            
-            if (assistantMessage) {
-              // Extract JSON from the message
-              const jsonMatch = assistantMessage.content.match(/```json\n([\s\S]*?)\n```/);
-              if (jsonMatch && jsonMatch[1]) {
-                const recommendationData = JSON.parse(jsonMatch[1]);
-                setRecommendation(recommendationData);
-              }
-            }
-          } catch (error) {
-            console.error('Error parsing recommendation data:', error);
-            // Continue even if parsing fails - we'll just show the raw message
-          }
-        }
-      } else {
-        // If not found in our local data (rare case), fetch it
-        const token = localStorage.getItem('token') || 
-                    localStorage.getItem('regular_token') || 
-                    localStorage.getItem('google_auth_token');
-      
-        if (!token) {
-          logout();
-          navigate('/login');
-          return;
-        }
-
-        const response = await axios.get(`${API_URL}/chat/${conversationId}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
+        setActiveConversation({
+          ...activeConversation,
+          messages
         });
-        
-        setActiveConversation(response.data);
-        
-        // Same recommendation extraction logic as above
-        // ... (omitted for brevity)
       }
-    } catch (error) {
-      console.error('Error selecting conversation:', error);
-      setError('Failed to load conversation');
+      
+      setError('Failed to send message');
     }
   };
 
@@ -445,9 +567,9 @@ const Dashboard: React.FC = () => {
     return date.toLocaleString();
   };
 
-  // Toggle sidebar visibility
+  // Simple toggle function - just expands for now
   const toggleSidebar = () => {
-    setShowSidebar(!showSidebar);
+    setSidebarExpanded(!sidebarExpanded);
   };
 
   // Update the handleLogout function in Dashboard component
@@ -475,96 +597,273 @@ const Dashboard: React.FC = () => {
       <header className="flex-shrink-0 relative z-10 backdrop-blur-sm bg-black/10 border-b border-white/10">
         <div className="container mx-auto px-6 py-4 flex justify-between items-center">
           <div className="flex items-center">
-            <button 
-              onClick={toggleSidebar}
-              className="mr-4 p-2 rounded-md hover:bg-white/10 transition-colors md:hidden"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
             <Link to="/" className="flex items-center">
               <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center">
                 <span className="text-xl font-bold">AQ</span>
-              </div>
+            </div>
               <h1 className="ml-3 text-xl font-bold text-white">AlignIQ</h1>
             </Link>
-          </div>
-          
+        </div>
+        
           <div className="flex items-center space-x-4">
-            <button 
+          <button 
               onClick={handleLogout}
-              className="px-4 py-2 rounded-md border border-white/20 bg-white/5 backdrop-blur-sm 
-              hover:bg-white/10 transition-all transform duration-200 hover:translate-y-[-2px] 
-              hover:shadow-lg hover:shadow-white/10"
+              className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-purple-500/80 to-purple-600/80 
+              hover:from-purple-500 hover:to-purple-600 transition-all duration-300 
+              border border-purple-400/20 shadow-md hover:shadow-purple-500/20"
             >
-              <span className="text-white font-semibold">Logout</span>
-            </button>
+              <span className="text-white font-medium">Logout</span>
+          </button>
           </div>
         </div>
       </header>
 
       {/* Main content - explicitly use remaining height */}
       <div className="flex flex-1 overflow-hidden h-[calc(100vh-73px)]">
-        {/* Sidebar with explicit height */}
-        <aside className={`${showSidebar ? 'w-80' : 'w-0'} 
-          h-[calc(100vh-73px)] transition-all duration-300 border-r border-white/10 bg-black/10 
-          flex-shrink-0 overflow-hidden md:relative absolute z-10`}>
-          {/* New conversation button */}
-          <div className="p-4 border-b border-white/10">
-            <button 
-              onClick={startNewConversation}
-              className="w-full py-3 px-4 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600
-              border border-purple-500/30 shadow-md transform transition-all duration-200 
-              hover:translate-y-[-2px] hover:shadow-lg hover:shadow-purple-500/30 
-              hover:from-blue-500 hover:to-purple-500 focus:outline-none"
+        {/* Collapsed sidebar - showing just icons */}
+        {!sidebarExpanded && (
+          <div className="w-16 h-full border-r border-white/10 bg-black/5 backdrop-blur-sm flex-shrink-0 
+            flex flex-col items-center py-6 space-y-8">
+            {/* Expand sidebar button - improved styling */}
+          <button 
+              onClick={toggleSidebar}
+              className="p-2.5 rounded-lg bg-gradient-to-br from-indigo-500/10 to-purple-500/10 
+                hover:from-indigo-500/20 hover:to-purple-500/20 border border-white/5 
+                transition-all duration-300 text-gray-200 hover:text-white
+                hover:shadow-md hover:shadow-purple-500/10"
+              title="Expand sidebar"
             >
-              <span className="relative z-10 flex items-center justify-center text-white font-semibold">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+            </svg>
+          </button>
+        
+            {/* New Analysis button - improved styling */}
+          <button
+              onClick={startNewConversation}
+              className="p-2.5 rounded-lg bg-gradient-to-br from-indigo-500/10 to-purple-500/10 
+                hover:from-indigo-500/20 hover:to-purple-500/20 border border-white/5 
+                transition-all duration-300 text-gray-200 hover:text-white
+                hover:shadow-md hover:shadow-purple-500/10"
+              title="New Analysis"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+            
+            {/* Divider - more subtle */}
+            <div className="w-8 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+            
+            {/* Recent conversations - improved styling */}
+            {Object.values(groupedConversations)
+              .flat()
+              .slice(0, 5)
+              .map(conversation => (
+                <button
+                  key={conversation.chat_history_id}
+                  onClick={() => selectConversation(conversation.chat_history_id)}
+                  className={`p-2.5 rounded-lg transition-all duration-300 border border-white/5
+                    ${activeConversation?.id === conversation.chat_history_id 
+                      ? 'bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border-purple-500/30 text-white shadow-md shadow-purple-500/10' 
+                      : 'bg-gradient-to-br from-indigo-500/5 to-purple-500/5 text-gray-400 hover:from-indigo-500/10 hover:to-purple-500/10 hover:text-white'
+                    }`}
+                  title={conversation.title}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                New Analysis
-              </span>
-            </button>
+                </button>
+              ))
+              }
           </div>
-          
-          {/* Conversations list */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-4">
-              <h2 className="text-lg font-semibold mb-4 text-gray-300">Your Analyses</h2>
+        )}
+
+        {/* Expanded sidebar - fixed for mobile */}
+        {sidebarExpanded && (
+          <aside className={`w-80 border-r border-white/10 bg-black/10 flex-shrink-0 overflow-hidden 
+            transition-all duration-300 flex flex-col
+            ${isMobile 
+              ? 'fixed top-[73px] left-0 bottom-0 z-20 h-[calc(100%-73px)]' 
+              : 'h-full relative'}`}
+          >
+            {/* Sidebar header */}
+            <div className="p-4 border-b border-white/10 flex justify-between items-center">
+            <button
+                onClick={startNewConversation}
+                className="flex-1 py-2 px-4 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600
+                border border-purple-500/30 shadow-md transition-all duration-200 
+                hover:from-blue-500 hover:to-purple-500 focus:outline-none mr-2"
+              >
+                <span className="flex items-center justify-center text-white font-semibold">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                  New Analysis
+                </span>
+              </button>
               
-              {conversations.length === 0 ? (
-                <div className="text-center py-8 text-gray-400">
-                  <p>No analyses yet</p>
-                  <p className="text-sm mt-2">Upload a document to get started</p>
+              <div className="flex items-center">
+                <button 
+                  onClick={toggleSidebar}
+                  className="p-2 rounded-md bg-gradient-to-br from-indigo-500/10 to-purple-500/10 
+                    hover:from-indigo-500/20 hover:to-purple-500/20 border border-white/5
+                    transition-all duration-300 text-gray-300 hover:text-white"
+                  title="Hide sidebar"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+        </div>
+      </div>
+      
+            {/* Conversations list with time-based grouping */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-4">
+                <h2 className="text-lg font-semibold mb-4 text-gray-300">Your Analyses</h2>
+                
+                {Object.keys(groupedConversations).every(key => 
+                  groupedConversations[key as keyof GroupedConversations].length === 0
+                ) ? (
+                  <div className="text-center py-8 text-gray-400">
+                    <p>No analyses yet</p>
+                    <p className="text-sm mt-2">Upload a document to get started</p>
                 </div>
-              ) : (
-                <ul className="space-y-2">
-                  {conversations.map(conversation => (
-                    <li key={conversation.id}>
+                ) : (
+                <div className="space-y-4">
+                    {/* Today's conversations */}
+                    {groupedConversations.today.length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-400 mb-2 uppercase tracking-wider">Today</h3>
+                        <ul className="space-y-2">
+                          {groupedConversations.today.map(conversation => (
+                            <li key={conversation.chat_history_id}>
+                  <button
+                                onClick={() => selectConversation(conversation.chat_history_id)}
+                                className={`w-full text-left p-3 rounded-lg transition-all duration-200 
+                                ${activeConversation?.id === conversation.chat_history_id 
+                                  ? 'bg-white/20 border border-purple-500/30' 
+                                  : 'hover:bg-white/10 border border-transparent'}`}
+                                title={conversation.title}
+                              >
+                                <div className="font-medium truncate max-w-full text-fade">
+                                  {conversation.title}
+                                </div>
+                                <div className="text-xs text-gray-400 mt-1">
+                                  {new Date(conversation.modified_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                </div>
+                  </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    
+                    {/* Yesterday's conversations */}
+                    {groupedConversations.yesterday.length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-400 mb-2 uppercase tracking-wider">Yesterday</h3>
+                        <ul className="space-y-2">
+                          {groupedConversations.yesterday.map(conversation => (
+                            <li key={conversation.chat_history_id}>
+                              <button
+                                onClick={() => selectConversation(conversation.chat_history_id)}
+                                className={`w-full text-left p-3 rounded-lg transition-all duration-200 
+                                ${activeConversation?.id === conversation.chat_history_id 
+                                  ? 'bg-white/20 border border-purple-500/30' 
+                                  : 'hover:bg-white/10 border border-transparent'}`}
+                                title={conversation.title}
+                              >
+                                <div className="font-medium truncate max-w-full text-fade">
+                                  {conversation.title}
+                      </div>
+                                <div className="text-xs text-gray-400 mt-1">
+                                  {new Date(conversation.modified_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                </div>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    
+                    {/* Last week's conversations */}
+                    {groupedConversations.lastWeek.length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-400 mb-2 uppercase tracking-wider">Last 7 Days</h3>
+                        <ul className="space-y-2">
+                          {groupedConversations.lastWeek.map(conversation => (
+                            <li key={conversation.chat_history_id}>
                       <button
-                        onClick={() => selectConversation(conversation.id)}
-                        className={`w-full text-left p-3 rounded-lg transition-all duration-200 
-                        ${activeConversation?.id === conversation.id 
-                          ? 'bg-white/20 border border-purple-500/30' 
-                          : 'hover:bg-white/10 border border-transparent'}`}
-                      >
-                        <div className="font-medium truncate">{conversation.title}</div>
-                        <div className="text-xs text-gray-400 mt-1">
-                          {new Date(conversation.created_at).toLocaleDateString()}
-                        </div>
+                                onClick={() => selectConversation(conversation.chat_history_id)}
+                                className={`w-full text-left p-3 rounded-lg transition-all duration-200 
+                                ${activeConversation?.id === conversation.chat_history_id 
+                                  ? 'bg-white/20 border border-purple-500/30' 
+                                  : 'hover:bg-white/10 border border-transparent'}`}
+                                title={conversation.title}
+                              >
+                                <div className="font-medium truncate max-w-full text-fade">
+                                  {conversation.title}
+                                </div>
+                                <div className="text-xs text-gray-400 mt-1">
+                                  {new Date(conversation.modified_at).toLocaleDateString()}
+                                </div>
                       </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                            </li>
+                          ))}
+                        </ul>
+                    </div>
+                  )}
+                  
+                    {/* Older conversations */}
+                    {groupedConversations.older.length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-400 mb-2 uppercase tracking-wider">Older</h3>
+                        <ul className="space-y-2">
+                          {groupedConversations.older.map(conversation => (
+                            <li key={conversation.chat_history_id}>
+                  <button
+                                onClick={() => selectConversation(conversation.chat_history_id)}
+                                className={`w-full text-left p-3 rounded-lg transition-all duration-200 
+                                ${activeConversation?.id === conversation.chat_history_id 
+                                  ? 'bg-white/20 border border-purple-500/30' 
+                                  : 'hover:bg-white/10 border border-transparent'}`}
+                                title={conversation.title}
+                              >
+                                <div className="font-medium truncate max-w-full text-fade">
+                                  {conversation.title}
+                                </div>
+                                <div className="text-xs text-gray-400 mt-1">
+                                  {new Date(conversation.modified_at).toLocaleDateString()}
+                                </div>
+                  </button>
+                            </li>
+                          ))}
+                        </ul>
+                </div>
+                    )}
+              </div>
+                )}
             </div>
-          </div>
-        </aside>
+            </div>
+          </aside>
+        )}
 
         {/* Main content area - with explicit height */}
         <main className="flex-1 flex flex-col h-[calc(100vh-73px)] overflow-hidden">
-          {activeConversation ? (
+          {isLoadingConversation ? (
+            // Loading state while fetching conversation details
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <svg className="animate-spin h-10 w-10 mx-auto mb-4 text-purple-500" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                <p className="text-gray-400">Loading conversation...</p>
+                  </div>
+                </div>
+          ) : activeConversation ? (
             // Chat interface with fixed structure
             <div className="flex flex-col h-full">
               {/* Conversation header - fixed height */}
@@ -576,11 +875,11 @@ const Dashboard: React.FC = () => {
               <div className="flex-1 overflow-y-auto" style={{ height: recommendation ? 'calc(100% - 165px)' : 'calc(100% - 73px)' }}>
                 <div className="p-4 space-y-6">
                   {activeConversation.messages.map((msg, index) => (
-                    <div 
-                      key={index} 
+                  <div
+                    key={index}
                       className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div 
+                  >
+                    <div
                         className={`max-w-3xl rounded-2xl p-4 ${
                           msg.role === 'user' 
                             ? 'bg-purple-600/30 border border-purple-500/30 ml-12' 
@@ -589,17 +888,17 @@ const Dashboard: React.FC = () => {
                       >
                         <div className="whitespace-pre-wrap break-words overflow-hidden">
                           {msg.content}
-                        </div>
+                      </div>
                         <div className="text-xs text-gray-400 mt-2 text-right">
                           {formatTimestamp(msg.timestamp)}
-                        </div>
-                      </div>
+                    </div>
+                  </div>
                     </div>
                   ))}
-                  <div ref={messagesEndRef} />
-                </div>
-              </div>
-              
+              <div ref={messagesEndRef} />
+            </div>
+        </div>
+        
               {/* Recommendation panel - collapsible */}
               {recommendation && (
                 <div className="flex-shrink-0 p-4 border-t border-white/10 max-h-[30vh] overflow-y-auto">
@@ -609,8 +908,8 @@ const Dashboard: React.FC = () => {
                     <div className="mb-4">
                       <h4 className="text-lg font-semibold mb-2">Project Summary</h4>
                       <p className="text-gray-300">{recommendation.summary}</p>
-                    </div>
-                    
+                </div>
+                
                     {/* Display tech stack recommendations */}
                     {recommendation.tech_stack && recommendation.tech_stack.length > 0 && (
                       <div className="mb-4">
@@ -624,9 +923,9 @@ const Dashboard: React.FC = () => {
                               {tech}
                             </span>
                           ))}
-                        </div>
-                      </div>
-                    )}
+              </div>
+                </div>
+              )}
                     
                     {/* Display developer requirements */}
                     {recommendation.developers_required && recommendation.developers_required.length > 0 && (
@@ -638,7 +937,7 @@ const Dashboard: React.FC = () => {
                               <div className="flex justify-between">
                                 <span className="font-medium">{dev.role}</span>
                                 <span className="text-purple-300">{dev.count} needed</span>
-                              </div>
+            </div>
                               <div className="mt-2 flex flex-wrap gap-1">
                                 {dev.skills.map((skill, idx) => (
                                   <span 
@@ -648,8 +947,8 @@ const Dashboard: React.FC = () => {
                                     {skill}
                                   </span>
                                 ))}
-                              </div>
-                            </div>
+          </div>
+      </div>
                           ))}
                         </div>
                       </div>
@@ -665,8 +964,8 @@ const Dashboard: React.FC = () => {
                           ))}
                         </ul>
                       </div>
-                    )}
-                  </div>
+          )}
+        </div>
                 </div>
               )}
               
@@ -690,7 +989,7 @@ const Dashboard: React.FC = () => {
                     rows={1}
                     ref={textareaRef}
                   />
-                  <button
+          <button 
                     type="submit"
                     disabled={!message.trim()}
                     className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg 
@@ -699,121 +998,190 @@ const Dashboard: React.FC = () => {
                       disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
-                    </svg>
-                  </button>
+              <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
                 </form>
               </div>
             </div>
           ) : (
-            // Upload interface
-            <div className="flex-1 flex items-center justify-center p-6 overflow-y-auto h-[calc(100vh-73px)]">
-              <div className="w-full max-w-2xl">
-                <div className="backdrop-blur-sm bg-white/5 rounded-3xl border border-white/10 p-8 shadow-2xl">
-                  <div className="text-center mb-8">
-                    <h2 className="text-3xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-blue-300 via-purple-300 to-pink-300">
-                      Upload Requirements Document
-                    </h2>
-                    <p className="text-gray-300">
-                      Upload your client's requirements document to get AI-powered analysis and recommendations
-                    </p>
-                  </div>
-                  
-                  {error && (
-                    <div className="mb-6 p-3 bg-red-500/20 border border-red-500/30 rounded-md text-white">
-                      {error}
-                    </div>
-                  )}
-                  
-                  <div className="mb-6">
-                    <label 
-                      htmlFor="file-upload" 
-                      className="block w-full cursor-pointer rounded-lg border-2 border-dashed border-white/30 p-12 text-center hover:border-purple-500/50 transition-colors"
-                    >
-                      <div className="flex flex-col items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                        </svg>
-                        <span className="text-lg font-medium text-gray-300">
-                          {file ? file.name : 'Click to upload or drag and drop'}
-                        </span>
-                        <span className="text-sm text-gray-400 mt-2">
-                          PDF, PPT, CSV, or TXT (max 10MB)
-                        </span>
-                      </div>
-                      <input 
-                        id="file-upload" 
-                        name="file-upload" 
-                        type="file" 
-                        className="hidden"
-                        ref={fileInputRef}
-                        onChange={handleFileChange}
-                        accept=".pdf,.ppt,.pptx,.csv,.txt,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/csv,text/plain"
-                      />
-                    </label>
-                  </div>
-                  
-                  {file && (
-                    <div className="mb-6">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-gray-300">Selected file:</span>
-                        <span className="text-sm text-gray-400">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
-                      </div>
-                      <div className="flex items-center">
-                        <div className="flex-1 bg-white/10 rounded-full h-2 mr-2">
-                          <div 
-                            className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full" 
-                            style={{ width: `${uploadProgress}%` }}
-                          ></div>
-                        </div>
-                        <span className="text-sm text-gray-400">{uploadProgress}%</span>
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div className="flex justify-center">
-                    <button
-                      onClick={handleUpload}
-                      disabled={!file || isUploading || isProcessing}
-                      className="py-3 px-8 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600
-                      border border-purple-500/30 shadow-md transform transition-all duration-200 
-                      hover:translate-y-[-2px] hover:shadow-lg hover:shadow-purple-500/30 
-                      hover:from-blue-500 hover:to-purple-500 focus:outline-none disabled:opacity-50"
-                    >
-                      <span className="relative z-10 flex items-center justify-center text-white font-semibold">
-                        {isUploading ? (
-                          <>
-                            <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Uploading...
-                          </>
-                        ) : isProcessing ? (
-                          <>
-                            <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Analyzing Document...
-                          </>
-                        ) : (
-                          <>
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                            </svg>
-                            Upload & Analyze
-                          </>
-                        )}
-                      </span>
-                    </button>
-                  </div>
-                </div>
+            // Welcome screen with two possible states
+            <div className="flex-1 flex flex-col items-center justify-center p-4">
+              {Object.values(groupedConversations).flat().length > 0 ? (
+                // Some conversations exist but none selected
+                <div className="text-center max-w-md mx-auto">
+                  <div className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-6 rounded-xl border border-white/10 backdrop-blur-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto mb-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+            </svg>
+                    <h2 className="text-xl font-bold mb-2 text-white">Welcome Back!</h2>
+                    <p className="text-gray-300 mb-4">Select a conversation from the sidebar to continue where you left off, or upload a new document to start a fresh analysis.</p>
+                    <div className="flex justify-center">
+          <button
+                        onClick={() => {
+                          if (!sidebarExpanded) {
+                            setSidebarExpanded(true);
+                          }
+                        }}
+                        className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg text-white font-medium hover:from-blue-500 hover:to-purple-500 transition-all mr-2"
+                      >
+                        View Conversations
+          </button>
+          <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white font-medium hover:bg-white/20 transition-all"
+                      >
+                        Upload New Document
+                      </button>
               </div>
+            </div>
+                </div>
+              ) : (
+                // No conversations exist yet - show upload UI
+                <div className="max-w-2xl mx-auto w-full">
+                  <div className="backdrop-blur-sm bg-white/5 rounded-3xl border border-white/10 p-8 shadow-2xl">
+                    <div className="text-center mb-8">
+                      <h2 className="text-3xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-blue-300 via-purple-300 to-pink-300">
+                        Upload Requirements Document
+                      </h2>
+                      <p className="text-gray-300">
+                        Upload your client's requirements document to get AI-powered analysis and recommendations
+                      </p>
+        </div>
+        
+                    {error && (
+                      <div className="mb-6 p-3 bg-red-500/20 border border-red-500/30 rounded-md text-white">
+                        {error}
+                      </div>
+                    )}
+                    
+                    <div className="mb-6">
+                      <label 
+                        htmlFor="file-upload" 
+                        className="block w-full cursor-pointer rounded-lg border-2 border-dashed border-white/30 p-12 text-center hover:border-purple-500/50 transition-colors"
+                      >
+                        <div className="flex flex-col items-center justify-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+                          <span className="text-lg font-medium text-gray-300">
+                            {file ? file.name : 'Click to upload or drag and drop'}
+                          </span>
+                          <span className="text-sm text-gray-400 mt-2">
+                            PDF, PPT, CSV, or TXT (max 10MB)
+                          </span>
+                        </div>
+                        <input 
+                          id="file-upload" 
+                          name="file-upload" 
+                          type="file" 
+                          className="hidden"
+                          ref={fileInputRef}
+                          onChange={handleFileChange}
+                          accept=".pdf,.ppt,.pptx,.csv,.txt,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/csv,text/plain"
+                        />
+                      </label>
+                    </div>
+                    
+                    {file && (
+                      <div className="mb-6">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-gray-300">Selected file:</span>
+                          <span className="text-sm text-gray-400">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                        </div>
+                        <div className="flex items-center">
+                          <div className="flex-1 bg-white/10 rounded-full h-2 mr-2">
+                            <div 
+                              className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full" 
+                              style={{ width: `${uploadProgress}%` }}
+                            ></div>
+                          </div>
+                          <span className="text-sm text-gray-400">{uploadProgress}%</span>
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="flex justify-center">
+            <button
+                        onClick={handleUpload}
+                        disabled={!file || isUploading || isProcessing}
+                        className="py-3 px-8 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600
+                        border border-purple-500/30 shadow-md transform transition-all duration-200 
+                        hover:translate-y-[-2px] hover:shadow-lg hover:shadow-purple-500/30 
+                        hover:from-blue-500 hover:to-purple-500 focus:outline-none disabled:opacity-50"
+                      >
+                        <span className="relative z-10 flex items-center justify-center text-white font-semibold">
+                          {isUploading ? (
+                            <>
+                              <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+                              Uploading...
+                            </>
+                          ) : isProcessing ? (
+                            <>
+                              <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Analyzing Document...
+                            </>
+                          ) : (
+                            <>
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                              </svg>
+                              Upload & Analyze
+                            </>
+                          )}
+                        </span>
+            </button>
+          </div>
+        </div>
+      </div>
+              )}
             </div>
           )}
         </main>
       </div>
+
+      {/* Mobile overlay when sidebar is expanded */}
+      {sidebarExpanded && isMobile && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-10"
+          onClick={toggleSidebar}
+          aria-hidden="true"
+        />
+      )}
+
+      <style>
+        {`
+          @keyframes pulse {
+            0%, 100% {
+              opacity: 0.2;
+            }
+            50% {
+              opacity: 0.8;
+            }
+          }
+          
+          .text-fade {
+            position: relative;
+          }
+          
+          .text-fade::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 0;
+            height: 100%;
+            width: 30%;
+            background: linear-gradient(to right, transparent, rgba(18, 16, 44, 0.95) 90%);
+            pointer-events: none;
+          }
+        `}
+      </style>
     </div>
   );
 };
