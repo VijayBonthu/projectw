@@ -146,3 +146,15 @@ button:focus-visible {
   overflow-x: auto;
   max-width: 100%;
 }
+
+/* Add this to your existing CSS to handle button styles in message export */
+.export-button {
+  padding: 0.3em 0.6em !important;
+  border-color: transparent !important;
+}
+
+/* Make sure PDF content renders correctly */
+.message-content {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
