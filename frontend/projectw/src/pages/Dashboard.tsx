@@ -50,9 +50,10 @@ interface GroupedConversations {
 const Dashboard: React.FC = () => {
   const { isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [fileProgresses, setFileProgresses] = useState<{[key: string]: number}>({});
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [totalProgress, setTotalProgress] = useState(0);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
@@ -76,6 +77,7 @@ const Dashboard: React.FC = () => {
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [renamingConversation, setRenamingConversation] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
+  const [showUploadUI, setShowUploadUI] = useState(false);
 
   // Check authentication on component mount
   useEffect(() => {
@@ -188,34 +190,93 @@ const Dashboard: React.FC = () => {
     };
   };
 
-  // Handle file selection
+  // Add this function to remove a file from the files array
+  const removeFile = (index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Add helper function to format file sizes
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return bytes + ' bytes';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  };
+
+  // Create simple FileIcon component based on file type
+  const FileIcon = ({ type }: { type: string }) => {
+    // Choose icon based on file type
+    let iconPath;
+    
+    if (type.includes('pdf')) {
+      iconPath = (
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+      );
+    } else if (type.includes('powerpoint') || type.includes('presentation')) {
+      iconPath = (
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 13v-1m4 1v-3m4 3V8M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+      );
+    } else if (type.includes('csv')) {
+      iconPath = (
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+      );
+    } else {
+      // Default document icon
+      iconPath = (
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      );
+    }
+    
+    return (
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        {iconPath}
+      </svg>
+    );
+  };
+
+  // Create TrashIcon component
+  const TrashIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    </svg>
+  );
+
+  // Update handleFileChange to properly validate files
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const selectedFile = e.target.files[0];
-      const fileType = selectedFile.type;
-      const fileExtension = selectedFile.name.split('.').pop()?.toLowerCase();
+      const newFiles = Array.from(e.target.files);
       
-      // Check if file type is allowed
-      if (
-        fileType.includes('pdf') || 
-        fileType.includes('powerpoint') || 
-        fileType.includes('text/plain') || 
-        fileType.includes('text/csv') ||
-        fileExtension === 'pdf' ||
-        fileExtension === 'ppt' ||
-        fileExtension === 'pptx' ||
-        fileExtension === 'txt' ||
-        fileExtension === 'csv'
-      ) {
-        setFile(selectedFile);
-        setError('');
-      } else {
-        setError('Please upload only PDF, PPT, CSV, or TXT files');
-        setFile(null);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
+      // Validate files (size and type)
+      const validFiles = newFiles.filter(file => {
+        // Check file size (max 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+          setError(`File "${file.name}" exceeds the 10MB limit.`);
+          return false;
         }
-      }
+        
+        // Check file type
+        const fileType = file.type;
+        const fileExtension = file.name.split('.').pop()?.toLowerCase();
+        
+        const isValidType = 
+          fileType.includes('pdf') || 
+          fileType.includes('powerpoint') || 
+          fileType.includes('text/plain') || 
+          fileType.includes('text/csv') ||
+          fileExtension === 'pdf' ||
+          fileExtension === 'ppt' ||
+          fileExtension === 'pptx' ||
+          fileExtension === 'txt' ||
+          fileExtension === 'csv';
+          
+        if (!isValidType) {
+          setError(`File "${file.name}" has an unsupported format.`);
+          return false;
+        }
+        
+        return true;
+      });
+      
+      setFiles(prev => [...prev, ...validFiles]);
     }
   };
 
@@ -248,17 +309,17 @@ const Dashboard: React.FC = () => {
 
   // Handle file upload for document analysis
   const handleUpload = async () => {
-    if (!file) {
+    if (files.length === 0) {
       setError('Please select a file to upload');
       return;
     }
 
     setIsUploading(true);
-    setUploadProgress(0);
+    setTotalProgress(0);
     setError('');
 
-      const formData = new FormData();
-    formData.append('file', file);
+    const formData = new FormData();
+    files.forEach(file => formData.append('file', file));
 
     try {
       const token = localStorage.getItem('token') || localStorage.getItem('regular_token') || localStorage.getItem('google_auth_token');
@@ -278,7 +339,7 @@ const Dashboard: React.FC = () => {
         }
       }
       
-      // Upload the file and get initial analysis
+      // Upload the files and get initial analysis
       const uploadResponse = await axios.post(`${API_URL}/upload`, formData, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -286,7 +347,7 @@ const Dashboard: React.FC = () => {
         },
         onUploadProgress: (progressEvent) => {
           const percentCompleted = Math.round((progressEvent.loaded * 100) / (progressEvent.total || 1));
-          setUploadProgress(percentCompleted);
+          setTotalProgress(percentCompleted);
         }
       });
       
@@ -294,12 +355,12 @@ const Dashboard: React.FC = () => {
       
       // Get document_id and other data from the upload response
       const documentId = uploadResponse.data.document_id;
-      const chatTitle = uploadResponse.data.title || `Analysis of ${file.name}`;
+      const chatTitle = uploadResponse.data.title || `Analysis of ${files[0].name}`;
       
       // Create a message from the upload response
       const initialMessage: Message = {
         role: "assistant", // Upload response is from assistant/system
-        content: uploadResponse.data.message || "Document processed successfully",
+        content: uploadResponse.data.message || "Documents processed successfully",
         timestamp: new Date().toISOString()
       };
       
@@ -333,13 +394,13 @@ const Dashboard: React.FC = () => {
       fetchConversations();
       
       // Reset file state
-      setFile(null);
+      setFiles([]);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
     } catch (error: any) {
       console.error('Upload error:', error);
-      setError(error.response?.data?.detail || 'Failed to upload and process document');
+      setError(error.response?.data?.detail || 'Failed to upload and process documents');
     } finally {
       setIsUploading(false);
       setIsProcessing(false);
@@ -464,8 +525,8 @@ const Dashboard: React.FC = () => {
           // Store for future use
           if (typeof userId === 'string') {
           localStorage.setItem('user_id', userId);
-          }
-        } catch (error) {
+      }
+    } catch (error) {
           console.error('Error decoding token:', error);
           setError('Failed to authenticate user');
         return;
@@ -580,7 +641,7 @@ const Dashboard: React.FC = () => {
   const startNewConversation = () => {
     setActiveConversation(null);
     setRecommendation(null);
-    setFile(null);
+    setFiles([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -616,7 +677,7 @@ const Dashboard: React.FC = () => {
     navigate('/login');
   };
 
-  // Add function to delete conversation
+  // Updated deleteConversation function to properly handle last conversation deletion
   const deleteConversation = async (chatId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent triggering conversation selection
     
@@ -631,26 +692,67 @@ const Dashboard: React.FC = () => {
           return;
         }
         
+        // Delete the conversation from the backend
         await axios.delete(`${API_URL}/chat/${chatId}`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
         });
         
-        // If deleted the active conversation, clear it
+        // Important: Reset active conversation FIRST if it's the one being deleted
         if (activeConversation?.id === chatId) {
           setActiveConversation(null);
         }
         
-        // Refresh the conversations list
-        fetchConversations();
+        // Update local conversation state to immediately reflect deletion
+        setGroupedConversations(prevState => {
+          const newState = {...prevState};
+          
+          // Remove the deleted conversation from each period
+          Object.keys(newState).forEach(period => {
+            newState[period] = newState[period].filter(
+              conv => conv.chat_history_id !== chatId
+            );
+          });
+          
+          return newState;
+        });
+        
+        // Also update the original conversations array for consistency
+        setConversations(prev => prev.filter(conv => conv.id !== chatId));
         
         // Close any open dropdown
         setActiveDropdown(null);
         
+        // Fetch fresh conversations to ensure UI is in sync with backend
+        fetchConversations();
+        
       } catch (error) {
         console.error('Error deleting conversation:', error);
         setError('Failed to delete conversation');
+        
+        // If we get a 404, the conversation is already gone from backend
+        // So we should still clean up the UI
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          if (activeConversation?.id === chatId) {
+            setActiveConversation(null);
+          }
+          
+          setGroupedConversations(prevState => {
+            const newState = {...prevState};
+            
+            Object.keys(newState).forEach(period => {
+              newState[period] = newState[period].filter(
+                conv => conv.chat_history_id !== chatId
+              );
+            });
+            
+            return newState;
+          });
+          
+          setConversations(prev => prev.filter(conv => conv.id !== chatId));
+          setActiveDropdown(null);
+        }
       }
     }
   };
@@ -675,7 +777,7 @@ const Dashboard: React.FC = () => {
     setActiveDropdown(null);
   };
 
-  // Function to handle saving the new title
+  // Function to handle saving the new title - CORRECTED VERSION
   const saveNewTitle = async (chatId: string, e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -683,8 +785,6 @@ const Dashboard: React.FC = () => {
     if (!newTitle.trim()) return;
     
     try {
-      setIsLoadingConversation(true); // Show loading state
-      
       const token = localStorage.getItem('token') || 
                    localStorage.getItem('regular_token') || 
                    localStorage.getItem('google_auth_token');
@@ -694,67 +794,58 @@ const Dashboard: React.FC = () => {
         return;
       }
       
-      // First, get the complete conversation data if we don't have it already
-      let conversation: Conversation | null = null;
-      
-      // Check if this is the active conversation (already loaded)
-      if (activeConversation?.id === chatId) {
-        conversation = activeConversation;
-      } else {
-        // Need to fetch the complete conversation
-        const response = await axios.get(`${API_URL}/chat/${chatId}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        
-        if (response.data) {
-          conversation = {
-            id: response.data.chat_history_id,
-            title: response.data.title,
-            created_at: response.data.created_at,
-            messages: response.data.messages || [],
-            document_id: response.data.document_id
-          };
-        }
-      }
-      
-      if (!conversation) {
-        throw new Error("Could not get conversation data");
-      }
-      
-      // Get user ID from localStorage
-      const userId = localStorage.getItem('user_id');
-      
-      if (!userId) {
-        throw new Error("User ID not found");
-      }
-      
-      // Prepare the update payload with ALL required fields
-      const updatePayload = {
-        chat_history_id: chatId,
-        title: newTitle.trim(),
-        document_id: conversation.document_id,
-        user_id: userId,
-        message: conversation.messages
-      };
-      
-      // Send the update request
-      await axios.post(`${API_URL}/chat`, updatePayload, {
+      // First fetch the complete conversation details
+      const chatResponse = await axios.get(`${API_URL}/chat/${chatId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
       
-      // Update active conversation title if this is the active one
-      if (activeConversation?.id === chatId) {
-        setActiveConversation({
-          ...activeConversation,
-          title: newTitle.trim()
-        });
+      if (!chatResponse.data || !chatResponse.data.user_details) {
+        throw new Error("Invalid response when fetching conversation details");
       }
       
-      // Refresh conversations to get updated title in the sidebar
+      const details = chatResponse.data.user_details;
+      
+      // Parse the messages array from the string
+      let messages;
+      try {
+        if (typeof details.message === 'string') {
+          messages = JSON.parse(details.message);
+        } else if (Array.isArray(details.message)) {
+          messages = details.message;
+        } else {
+          console.error("Unexpected message format:", details.message);
+          messages = [];
+        }
+      } catch (e) {
+        console.error("Error parsing messages:", e);
+        messages = [];
+      }
+      
+      // Get user ID from localStorage
+      const userId = localStorage.getItem('user_id');
+      if (!userId) {
+        throw new Error("User ID not found in localStorage");
+      }
+      
+      // Update the conversation with POST
+      await axios.post(`${API_URL}/chat`, 
+        {
+          chat_history_id: chatId,
+          user_id: userId,
+          document_id: details.document_id || "",
+          message: messages,
+          title: newTitle.trim()
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+      
+      // Refresh conversations to get updated title
       fetchConversations();
       
       // Clear renaming state
@@ -763,9 +854,7 @@ const Dashboard: React.FC = () => {
       
     } catch (error) {
       console.error('Error renaming conversation:', error);
-      setError('Failed to rename conversation: ' + (error instanceof Error ? error.message : 'Unknown error'));
-    } finally {
-      setIsLoadingConversation(false);
+      setError('Failed to rename conversation');
     }
   };
 
@@ -774,6 +863,28 @@ const Dashboard: React.FC = () => {
     e.stopPropagation();
     setRenamingConversation(null);
     setNewTitle('');
+  };
+
+  // Add these event handlers to prevent browser default behavior for drag and drop
+  const handleDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      // Use the existing file change handler with the dropped files
+      const fileChangeEvent = {
+        target: {
+          files: e.dataTransfer.files
+        }
+      } as React.ChangeEvent<HTMLInputElement>;
+      
+      handleFileChange(fileChangeEvent);
+    }
   };
 
   return (
@@ -933,7 +1044,7 @@ const Dashboard: React.FC = () => {
                                   onClick={(e) => e.stopPropagation()}
                                   className="px-2.5 py-1 bg-gray-800/70 rounded-md"
                                 >
-                                  <input
+                <input
                                     type="text"
                                     value={newTitle}
                                     onChange={(e) => setNewTitle(e.target.value)}
@@ -941,13 +1052,13 @@ const Dashboard: React.FC = () => {
                                     autoFocus
                                   />
                                   <div className="flex mt-1 justify-end space-x-1">
-                                    <button
+                  <button
                                       type="button"
                                       onClick={cancelRenaming}
                                       className="text-xs px-2 py-0.5 text-gray-300 hover:text-white"
                                     >
                                       Cancel
-                                    </button>
+                  </button>
                                     <button
                                       type="submit"
                                       className="text-xs px-2 py-0.5 bg-purple-600 rounded text-white hover:bg-purple-500"
@@ -971,13 +1082,13 @@ const Dashboard: React.FC = () => {
                                     <div className="flex items-center flex-1 min-w-0">
                                       <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1.5 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                                      </svg>
+                        </svg>
                                       <span className="truncate text-xs">{conv.title}</span>
-                                    </div>
+                      </div>
                                     
                                     {/* Horizontal ellipsis menu button */}
                                     <div className="relative flex-shrink-0">
-                                      <button 
+                      <button
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           setActiveDropdown(activeDropdown === conv.chat_history_id ? null : conv.chat_history_id);
@@ -986,14 +1097,14 @@ const Dashboard: React.FC = () => {
                                       >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
-                                        </svg>
-                                      </button>
-                                      
+                        </svg>
+                      </button>
+                  
                                       {/* Dropdown menu */}
                                       {activeDropdown === conv.chat_history_id && (
                                         <div className="absolute right-0 mt-1 w-32 rounded-md shadow-lg bg-gray-800 ring-1 ring-black ring-opacity-5 z-10">
                                           <div className="py-1">
-                                            <button
+                  <button
                                               onClick={(e) => renameConversation(conv.chat_history_id, e)}
                                               className="flex items-center px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white w-full text-left"
                                             >
@@ -1010,11 +1121,11 @@ const Dashboard: React.FC = () => {
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                               </svg>
                                               Delete
-                                            </button>
-                                          </div>
-                                        </div>
+                  </button>
+                </div>
+              </div>
                                       )}
-                                    </div>
+            </div>
                                   </div>
                                 </button>
                               )}
@@ -1105,8 +1216,8 @@ const Dashboard: React.FC = () => {
                             </span>
                           ))}
               </div>
-                </div>
-              )}
+            </div>
+          )}
                     
                     {/* Display developer requirements */}
                     {recommendation.developers_required && recommendation.developers_required.length > 0 && (
@@ -1118,7 +1229,7 @@ const Dashboard: React.FC = () => {
                               <div className="flex justify-between">
                                 <span className="font-medium">{dev.role}</span>
                                 <span className="text-purple-300">{dev.count} needed</span>
-            </div>
+        </div>
                               <div className="mt-2 flex flex-wrap gap-1">
                                 {dev.skills.map((skill, idx) => (
                                   <span 
@@ -1170,7 +1281,7 @@ const Dashboard: React.FC = () => {
                     rows={1}
                     ref={textareaRef}
                   />
-          <button 
+                <button
                     type="submit"
                     disabled={!message.trim() || isSendingMessage}
                     className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg 
@@ -1180,23 +1291,23 @@ const Dashboard: React.FC = () => {
                   >
                     {isSendingMessage ? (
                       <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                    ) : (
+                    </svg>
+                  ) : (
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
-                      </svg>
-                    )}
-                  </button>
+                    </svg>
+                  )}
+                </button>
                 </form>
               </div>
-            </div>
+                </div>
           ) : (
             // Welcome screen with two possible states
             <div className="flex-1 flex flex-col items-center justify-center p-4">
-              {Object.values(groupedConversations).flat().length > 0 ? (
-                // Some conversations exist but none selected
+              {Object.values(groupedConversations).flat().length > 0 && !showUploadUI ? (
+                // Some conversations exist but none selected - Welcome Back screen
                 <div className="text-center max-w-md mx-auto">
                   <div className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-6 rounded-xl border border-white/10 backdrop-blur-sm">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto mb-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1205,7 +1316,7 @@ const Dashboard: React.FC = () => {
                     <h2 className="text-xl font-bold mb-2 text-white">Welcome Back!</h2>
                     <p className="text-gray-300 mb-4">Select a conversation from the sidebar to continue where you left off, or upload a new document to start a fresh analysis.</p>
                     <div className="flex justify-center">
-          <button
+          <button 
                         onClick={() => {
                           if (!sidebarExpanded) {
                             setSidebarExpanded(true);
@@ -1215,93 +1326,140 @@ const Dashboard: React.FC = () => {
                       >
                         View Conversations
           </button>
-          <button
-                        onClick={() => fileInputRef.current?.click()}
+          <button 
+                        onClick={() => {
+                          setShowUploadUI(true);
+                          // Reset any previous upload state
+                          setFiles([]);
+                          setTotalProgress(0);
+                          setError('');
+                          if (fileInputRef.current) {
+                            fileInputRef.current.value = '';
+                          }
+                        }}
                         className="px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white font-medium hover:bg-white/20 transition-all"
-                      >
+          >
                         Upload New Document
-                      </button>
+          </button>
               </div>
             </div>
                 </div>
               ) : (
-                // No conversations exist yet - show upload UI
+                // No conversations exist OR showUploadUI is true - show upload UI
                 <div className="max-w-2xl mx-auto w-full">
-                  <div className="backdrop-blur-sm bg-white/5 rounded-3xl border border-white/10 p-8 shadow-2xl">
-                    <div className="text-center mb-8">
-                      <h2 className="text-3xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-blue-300 via-purple-300 to-pink-300">
-                        Upload Requirements Document
-                      </h2>
-                      <p className="text-gray-300">
-                        Upload your client's requirements document to get AI-powered analysis and recommendations
-                      </p>
-        </div>
-        
-                    {error && (
-                      <div className="mb-6 p-3 bg-red-500/20 border border-red-500/30 rounded-md text-white">
-                        {error}
+                  {Object.values(groupedConversations).flat().length > 0 && (
+                    // Only show back button if user has conversations
+                    <button
+                      onClick={() => setShowUploadUI(false)}
+                      className="flex items-center text-gray-400 hover:text-white mb-4 transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                      </svg>
+                      Back to Conversations
+                    </button>
+                  )}
+                  
+                  {/* Main container with compact fixed layout */}
+                  <div className="backdrop-blur-sm bg-white/5 rounded-3xl border border-white/10 p-5 shadow-2xl flex flex-col max-h-[75vh] max-w-xl mx-auto">
+                    {/* Section 1: Compact header & drag area */}
+                    <div className="flex-none">
+                      <div className="text-center mb-4">
+                        <h2 className="text-2xl font-bold mb-1 bg-clip-text text-transparent bg-gradient-to-r from-blue-300 via-purple-300 to-pink-300">
+                          Upload Requirements Documents
+                        </h2>
+                        <p className="text-sm text-gray-300">
+                          Upload your client's requirements documents to get AI-powered analysis and recommendations
+                        </p>
                       </div>
-                    )}
-                    
-                    <div className="mb-6">
-                      <label 
-                        htmlFor="file-upload" 
-                        className="block w-full cursor-pointer rounded-lg border-2 border-dashed border-white/30 p-12 text-center hover:border-purple-500/50 transition-colors"
-                      >
-                        <div className="flex flex-col items-center justify-center">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-                          <span className="text-lg font-medium text-gray-300">
-                            {file ? file.name : 'Click to upload or drag and drop'}
-                          </span>
-                          <span className="text-sm text-gray-400 mt-2">
-                            PDF, PPT, CSV, or TXT (max 10MB)
-                          </span>
+                      
+                      {error && (
+                        <div className="mb-3 p-2 bg-red-500/20 border border-red-500/30 rounded-md text-white text-sm">
+                          {error}
                         </div>
-                        <input 
-                          id="file-upload" 
-                          name="file-upload" 
-                          type="file" 
-                          className="hidden"
-                          ref={fileInputRef}
-                          onChange={handleFileChange}
-                          accept=".pdf,.ppt,.pptx,.csv,.txt,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/csv,text/plain"
-                        />
-                      </label>
+                      )}
+                      
+                      <div className="mb-3">
+                        <label 
+                          htmlFor="file-upload" 
+                          className="block w-full cursor-pointer rounded-lg border-2 border-dashed border-white/30 p-4 text-center hover:border-purple-500/50 transition-colors"
+                          onDragOver={handleDragOver}
+                          onDrop={handleDrop}
+                        >
+                          <div className="flex flex-col items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                            </svg>
+                            <span className="text-base font-medium text-gray-300">
+                              Click to upload or drag and drop
+                            </span>
+                            <span className="text-xs text-gray-400 mt-1">
+                              PDF, PPT, CSV, or TXT (max 10MB each)
+                            </span>
+                          </div>
+                          <input 
+                            id="file-upload" 
+                            name="file-upload" 
+                            type="file" 
+                            className="hidden"
+                            ref={fileInputRef}
+                            onChange={handleFileChange}
+                            accept=".pdf,.ppt,.pptx,.csv,.txt,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/csv,text/plain"
+                            multiple
+                          />
+                        </label>
+                      </div>
                     </div>
                     
-                    {file && (
-                      <div className="mb-6">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium text-gray-300">Selected file:</span>
-                          <span className="text-sm text-gray-400">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
-                        </div>
-                        <div className="flex items-center">
-                          <div className="flex-1 bg-white/10 rounded-full h-2 mr-2">
-                            <div 
-                              className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full" 
-                              style={{ width: `${uploadProgress}%` }}
-                            ></div>
+                    {/* Section 2: File list area - more compact */}
+                    <div className="flex-grow overflow-hidden flex flex-col min-h-0">
+                      {files.length > 0 && (
+                        <div className="mb-3 flex flex-col min-h-0">
+                          <div className="flex justify-between items-center mb-1 flex-shrink-0">
+                            <h3 className="text-xs font-medium text-gray-300">Selected files ({files.length})</h3>
+                            <button
+                              onClick={() => setFiles([])}
+                              className="text-xs text-red-400 hover:text-red-300 flex items-center"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                              Delete All
+                            </button>
                           </div>
-                          <span className="text-sm text-gray-400">{uploadProgress}%</span>
+                          <div className="overflow-y-auto flex-grow bg-white/5 rounded-lg border border-white/10 min-h-[120px]">
+                            {files.map((file, index) => (
+                              <div key={`${file.name}-${index}`} className="p-2 border-b border-white/10 flex justify-between items-center">
+                                <div className="flex items-center flex-1 min-w-0">
+                                  <FileIcon type={file.type} />
+                                  <div className="ml-2 flex-1 min-w-0">
+                                    <p className="text-sm text-white truncate">{file.name}</p>
+                                    <p className="text-xs text-gray-400">{formatFileSize(file.size)}</p>
+                                  </div>
+                                </div>
+                                <button onClick={() => removeFile(index)} className="text-gray-400 hover:text-red-400 ml-2">
+                                  <TrashIcon />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                     
-                    <div className="flex justify-center">
-            <button
+                    {/* Section 3: Action buttons */}
+                    <div className="flex-none mt-3 flex justify-center">
+                      <button
                         onClick={handleUpload}
-                        disabled={!file || isUploading || isProcessing}
-                        className="py-3 px-8 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600
-                        border border-purple-500/30 shadow-md transform transition-all duration-200 
-                        hover:translate-y-[-2px] hover:shadow-lg hover:shadow-purple-500/30 
+                        disabled={files.length === 0 || isUploading || isProcessing}
+                        className="py-2 px-6 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600
+                        border border-purple-500/30 shadow-md transition-all
                         hover:from-blue-500 hover:to-purple-500 focus:outline-none disabled:opacity-50"
                       >
-                        <span className="relative z-10 flex items-center justify-center text-white font-semibold">
+                        <span className="flex items-center justify-center text-white font-medium">
                           {isUploading ? (
                             <>
-                              <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
+                              <svg className="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
@@ -1309,25 +1467,25 @@ const Dashboard: React.FC = () => {
                             </>
                           ) : isProcessing ? (
                             <>
-                              <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
+                              <svg className="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                              Analyzing Document...
+              </svg>
+                              Analyzing Documents...
                             </>
                           ) : (
                             <>
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                              </svg>
+              </svg>
                               Upload & Analyze
                             </>
                           )}
                         </span>
-            </button>
-          </div>
-        </div>
-      </div>
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           )}
