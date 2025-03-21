@@ -47,6 +47,114 @@ interface GroupedConversations {
   older: ConversationMetadata[];
 }
 
+const ProfileMenu = ({ user, logout, sidebarExpanded }) => {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+  
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setIsMenuOpen(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+  
+  // Get initials for avatar
+  const getInitials = (name) => {
+    if (!name) return 'U';
+    return name.split(' ').map(n => n[0]).join('').toUpperCase();
+  };
+  
+  // Get user email from localStorage
+  const userEmail = localStorage.getItem('user_email') || 'user@example.com';
+  const userName = userEmail.split('@')[0];
+  const userInitials = getInitials(userName);
+  
+  return (
+    <div className="relative" ref={menuRef}>
+      <button 
+        onClick={() => setIsMenuOpen(!isMenuOpen)}
+        className={`flex items-center rounded-lg transition-colors hover:bg-white/5
+          ${sidebarExpanded ? 'w-full space-x-3 p-3' : 'w-10 h-10 justify-center mx-auto'}`}
+        title={!sidebarExpanded ? "Account menu" : ""}
+      >
+        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center flex-shrink-0">
+          <span className="text-sm font-bold text-white">{userInitials}</span>
+        </div>
+        
+        {sidebarExpanded && (
+          <>
+            <div className="flex-grow min-w-0">
+              <p className="text-sm font-medium text-white truncate">{userName}</p>
+              <p className="text-xs text-gray-400 truncate">{userEmail}</p>
+            </div>
+            <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 text-gray-400 transition-transform ${isMenuOpen ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </>
+        )}
+      </button>
+      
+      {/* Dropdown menu */}
+      {isMenuOpen && (
+        <div className={`bg-gray-800 rounded-lg shadow-lg border border-white/10 overflow-hidden
+          ${sidebarExpanded 
+            ? 'absolute bottom-full left-0 mb-2 w-full' 
+            : 'fixed bottom-[70px] left-16 mb-2 w-48'}`}
+        >
+          <div className="py-1">
+            <button 
+              className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/5 flex items-center"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Account Settings
+            </button>
+            <button 
+              className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/5 flex items-center"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Help Center
+            </button>
+            <button 
+              className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/5 flex items-center"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+              </svg>
+              Give Feedback
+            </button>
+            <hr className="border-white/10 my-1" />
+            <button 
+              className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-white/5 flex items-center"
+              onClick={() => {
+                logout();
+                setIsMenuOpen(false);
+              }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Logout
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Dashboard: React.FC = () => {
   const { isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
@@ -219,7 +327,7 @@ const Dashboard: React.FC = () => {
       iconPath = (
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
       );
-    } else {
+      } else {
       // Default document icon
       iconPath = (
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -318,7 +426,7 @@ const Dashboard: React.FC = () => {
     setTotalProgress(0);
     setError('');
 
-    const formData = new FormData();
+      const formData = new FormData();
     files.forEach(file => formData.append('file', file));
 
     try {
@@ -480,10 +588,10 @@ const Dashboard: React.FC = () => {
         if (isMobile && sidebarExpanded) {
           setSidebarExpanded(false);
         }
-      } else {
+            } else {
         throw new Error("Invalid response format");
-      }
-    } catch (error) {
+            }
+          } catch (error) {
       console.error('Error loading conversation:', error);
       setError('Failed to load conversation');
     } finally {
@@ -727,7 +835,7 @@ const Dashboard: React.FC = () => {
         // Fetch fresh conversations to ensure UI is in sync with backend
         fetchConversations();
         
-      } catch (error) {
+    } catch (error) {
         console.error('Error deleting conversation:', error);
         setError('Failed to delete conversation');
         
@@ -888,262 +996,234 @@ const Dashboard: React.FC = () => {
   };
 
   return (
-    <div className="h-screen overflow-hidden flex flex-col bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e] text-white">
-      {/* Header - fixed height */}
-      <header className="flex-shrink-0 relative z-10 backdrop-blur-sm bg-black/10 border-b border-white/10">
-        <div className="container mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center">
-            <Link to="/" className="flex items-center">
-              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center">
-                <span className="text-xl font-bold">AQ</span>
-            </div>
-              <h1 className="ml-3 text-xl font-bold text-white">AlignIQ</h1>
-            </Link>
-        </div>
-        
-          <div className="flex items-center space-x-4">
-          <button 
-              onClick={handleLogout}
-              className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-purple-500/80 to-purple-600/80 
-              hover:from-purple-500 hover:to-purple-600 transition-all duration-300 
-              border border-purple-400/20 shadow-md hover:shadow-purple-500/20"
-            >
-              <span className="text-white font-medium">Logout</span>
-          </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main content - explicitly use remaining height */}
-      <div className="flex flex-1 overflow-hidden h-[calc(100vh-73px)]">
-        {/* Collapsed sidebar - showing just icons */}
-        {!sidebarExpanded && (
-          <div className="w-16 h-full border-r border-white/10 bg-black/5 backdrop-blur-sm flex-shrink-0 
-            flex flex-col items-center py-6 space-y-8">
-            {/* Expand sidebar button - improved styling */}
-          <button 
-              onClick={toggleSidebar}
-              className="p-2.5 rounded-lg bg-gradient-to-br from-indigo-500/10 to-purple-500/10 
-                hover:from-indigo-500/20 hover:to-purple-500/20 border border-white/5 
-                transition-all duration-300 text-gray-200 hover:text-white
-                hover:shadow-md hover:shadow-purple-500/10"
-              title="Expand sidebar"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-            </svg>
-          </button>
-        
-            {/* New Analysis button - improved styling */}
-          <button
-              onClick={startNewConversation}
-              className="p-2.5 rounded-lg bg-gradient-to-br from-indigo-500/10 to-purple-500/10 
-                hover:from-indigo-500/20 hover:to-purple-500/20 border border-white/5 
-                transition-all duration-300 text-gray-200 hover:text-white
-                hover:shadow-md hover:shadow-purple-500/10 mt-0.1"
-              title="New Analysis"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
-            
-            {/* Divider - more subtle */}
-            <div className="w-8 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
-            
-            {/* Recent conversations - improved styling */}
-            {Object.values(groupedConversations)
-              .flat()
-              .slice(0, 5)
-              .map(conversation => (
-                <button
-                  key={conversation.chat_history_id}
-                  onClick={() => selectConversation(conversation.chat_history_id)}
-                  className={`p-2.5 rounded-lg transition-all duration-300 border border-white/5
-                    ${activeConversation?.id === conversation.chat_history_id 
-                      ? 'bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border-purple-500/30 text-white shadow-md shadow-purple-500/10' 
-                      : 'bg-gradient-to-br from-indigo-500/5 to-purple-500/5 text-gray-400 hover:from-indigo-500/10 hover:to-purple-500/10 hover:text-white'
-                    }`}
-                  title={conversation.title}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                </button>
-              ))
-              }
-          </div>
-        )}
-
-        {/* Expanded sidebar - fixed for mobile */}
-        {sidebarExpanded && (
-          <aside className={`w-80 border-r border-white/10 bg-black/10 flex-shrink-0 overflow-hidden 
-            transition-all duration-300 flex flex-col
-            ${isMobile 
-              ? 'fixed top-[73px] left-0 bottom-0 z-20 h-[calc(100%-73px)]' 
-              : 'h-full relative'}`}
-          >
-            {/* Sidebar header */}
-            <div className="p-4 border-b border-white/10 flex justify-between items-center">
-            <button
-                onClick={startNewConversation}
-                className="flex-1 py-2 px-4 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600
-                border border-purple-500/30 shadow-md transition-all duration-200 
-                hover:from-blue-500 hover:to-purple-500 focus:outline-none mr-2"
-              >
-                <span className="flex items-center justify-center text-white font-semibold">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                  New Analysis
-                </span>
-              </button>
-              
-              <div className="flex items-center">
-                <button 
-                  onClick={toggleSidebar}
-                  className="p-2 rounded-md bg-gradient-to-br from-indigo-500/10 to-purple-500/10 
-                    hover:from-indigo-500/20 hover:to-purple-500/20 border border-white/5
-                    transition-all duration-300 text-gray-300 hover:text-white"
-                  title="Hide sidebar"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-        </div>
-      </div>
-      
-            {/* Conversations list with time-based grouping */}
-            <div className="flex-1 overflow-y-auto">
-              <div className="p-4">
-                <h2 className="text-lg font-semibold mb-4 text-gray-300">Your Analyses</h2>
-                
-                {Object.keys(groupedConversations).every(key => 
-                  groupedConversations[key as keyof GroupedConversations].length === 0
-                ) ? (
-                  <div className="text-center py-8 text-gray-400">
-                    <p>No analyses yet</p>
-                    <p className="text-sm mt-2">Upload a document to get started</p>
+    <div className="relative flex h-screen bg-[#141332]">
+      {/* Sidebar with better collapsed state organization */}
+      <aside className={`fixed inset-y-0 left-0 z-20 transition-all duration-300 transform bg-[#120f2d] border-r border-gray-800 
+        ${sidebarExpanded ? 'w-64' : 'w-16'}`}>
+        <div className="flex flex-col h-full">
+          {sidebarExpanded ? (
+            // EXPANDED SIDEBAR CONTENT
+            <>
+              {/* Logo + brand with smaller, themed text */}
+              <div className="flex-none p-3 border-b border-white/10">
+                <div className="flex items-center">
+                  <div className="h-8 w-8 rounded-md bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center">
+                    <span className="text-sm font-bold text-white">AQ</span>
+                  </div>
+                  <span className="ml-3 text-4xl leading-snug font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-300 to-purple-300">
+                    AlignIQ
+                  </span>
                 </div>
-                ) : (
-                <div className="mt-6 space-y-1.5">
-                  {Object.entries(groupedConversations).map(([period, convs]) => 
-                    convs.length > 0 && (
-                      <div key={period} className="mb-2.5">
-                        <h3 className="text-xs font-medium text-gray-400 uppercase mb-1 px-3">
-                          {period}
-                        </h3>
-                        <div className="space-y-0.5">
-                          {convs.map(conv => (
-                            <div key={conv.chat_history_id} className="relative">
-                              {renamingConversation === conv.chat_history_id ? (
-                                // Rename form
-                                <form 
-                                  onSubmit={(e) => saveNewTitle(conv.chat_history_id, e)}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="px-2.5 py-1 bg-gray-800/70 rounded-md"
-                                >
-                <input
-                                    type="text"
-                                    value={newTitle}
-                                    onChange={(e) => setNewTitle(e.target.value)}
-                                    className="w-full text-xs bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white focus:outline-none focus:ring-1 focus:ring-purple-500"
-                                    autoFocus
-                                  />
-                                  <div className="flex mt-1 justify-end space-x-1">
+              </div>
+              
+              {/* New Chat and Toggle buttons side by side with standard padding */}
+              <div className="px-3 py-3">
+                <div className="flex items-center space-x-3">
+                  {/* New Chat button - larger */}
                   <button
-                                      type="button"
-                                      onClick={cancelRenaming}
-                                      className="text-xs px-2 py-0.5 text-gray-300 hover:text-white"
-                                    >
-                                      Cancel
+                    onClick={() => {
+                      setShowUploadUI(true);
+                      setActiveConversation(null);
+                    }}
+                    className="flex-1 flex items-center justify-center !py-2 !px-3 bg-gradient-to-r from-blue-600 to-purple-600 
+                      rounded-md text-white font-medium hover:from-blue-500 hover:to-purple-500 transition-all"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
+                    </svg>
+                    New Chat
                   </button>
-                                    <button
-                                      type="submit"
-                                      className="text-xs px-2 py-0.5 bg-purple-600 rounded text-white hover:bg-purple-500"
-                                    >
-                                      Save
-                                    </button>
-                                  </div>
-                                </form>
-                              ) : (
-                                // Normal conversation button
-                                <button
-                                  onClick={() => selectConversation(conv.chat_history_id)}
-                                  className={`w-full text-left px-2.5 py-1 rounded-md transition-colors group
-                                    ${activeConversation?.id === conv.chat_history_id 
-                                      ? 'bg-purple-500/20 text-white' 
-                                      : 'text-gray-300 hover:bg-white/5'
-                                    }
-                                  `}
-                                >
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center flex-1 min-w-0">
-                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1.5 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                        </svg>
-                                      <span className="truncate text-xs">{conv.title}</span>
-                      </div>
-                                    
-                                    {/* Horizontal ellipsis menu button */}
-                                    <div className="relative flex-shrink-0">
-                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setActiveDropdown(activeDropdown === conv.chat_history_id ? null : conv.chat_history_id);
-                                        }}
-                                        className={`p-1 rounded-full ${activeDropdown === conv.chat_history_id ? 'bg-white/10' : 'opacity-0 group-hover:opacity-100'} hover:bg-white/10 transition-opacity`}
-                                      >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
-                        </svg>
-                      </button>
                   
-                                      {/* Dropdown menu */}
-                                      {activeDropdown === conv.chat_history_id && (
-                                        <div className="absolute right-0 mt-1 w-32 rounded-md shadow-lg bg-gray-800 ring-1 ring-black ring-opacity-5 z-10">
-                                          <div className="py-1">
-                  <button
-                                              onClick={(e) => renameConversation(conv.chat_history_id, e)}
-                                              className="flex items-center px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white w-full text-left"
-                                            >
-                                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-2 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                              </svg>
-                                              Rename
-                                            </button>
-                                            <button
-                                              onClick={(e) => deleteConversation(conv.chat_history_id, e)}
-                                              className="flex items-center px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white w-full text-left"
-                                            >
-                                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-2 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                              </svg>
-                                              Delete
+                  {/* Toggle button - same size as before */}
+                  <button 
+                    onClick={toggleSidebar}
+                    className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded hover:bg-white/5 transition-colors !p-0"
+                    title="Collapse sidebar"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
+                    </svg>
                   </button>
                 </div>
               </div>
-                                      )}
-            </div>
-                                  </div>
-                                </button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  )}
+            </>
+          ) : (
+            // COLLAPSED SIDEBAR - Keep the current vertical arrangement
+            <>
+              {/* 1. Logo at the top */}
+              <div className="flex-none p-3 flex justify-center">
+                <div className="h-8 w-8 rounded-md bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center">
+                  <span className="text-sm font-bold text-white">AQ</span>
                 </div>
-                )}
-            </div>
-            </div>
-          </aside>
+              </div>
+              
+              {/* 2. Toggle button in the middle */}
+              <div className="flex-none py-3 flex justify-center">
+                <button 
+                  onClick={toggleSidebar}
+                  className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-white/5 transition-colors !p-0"
+                  title="Expand sidebar"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+              
+              {/* 3. New chat button (just +) at the bottom */}
+              <div className="flex-none py-3 flex justify-center">
+                <button 
+                  onClick={() => {
+                    setShowUploadUI(true);
+                    setActiveConversation(null);
+                  }}
+                  className="w-10 h-10 flex items-center justify-center bg-gradient-to-r from-blue-600 to-purple-600 
+                    rounded-md text-white font-medium hover:from-blue-500 hover:to-purple-500 transition-all !p-0"
+                  title="New Chat"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+              </div>
+            </>
+          )}
+          
+          {/* Conversation list - only when expanded */}
+          {sidebarExpanded && (
+            <div className="flex-grow overflow-y-auto">
+              <div className="px-4">
+                <h3 className="text-xs font-medium text-gray-300 mb-2">
+                  Recent conversations
+                </h3>
+                
+                {/* Conversations grouped by time period */}
+                {Object.entries(groupedConversations)
+                  .filter(([_, convs]) => convs.length > 0)
+                  .map(([period, convs]) => (
+                    <div key={period} className="mb-4">
+                      <h4 className="text-xs text-gray-500 mb-1">
+                        {period.charAt(0).toUpperCase() + period.slice(1)}
+                      </h4>
+                      
+                      <div className="space-y-1">
+                        {convs.map(conversation => (
+                          <div key={conversation.chat_history_id} className="relative group">
+                            {renamingConversation === conversation.chat_history_id ? (
+                              /* Render just the form when renaming - no parent button */
+                              <form 
+                                className="w-full text-left flex items-center py-2 px-3 rounded-md bg-white/5"
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  saveNewTitle(conversation.chat_history_id, e);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-3 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                
+                <input
+                                  type="text"
+                                  className="flex-1 bg-gray-800 border border-purple-500/50 rounded px-2 py-1 text-sm text-white"
+                                  value={newTitle}
+                                  onChange={(e) => setNewTitle(e.target.value)}
+                                  autoFocus
+                                  onBlur={() => setRenamingConversation(null)}
+                                />
+                              </form>
+                            ) : (
+                              /* Regular button when not renaming */
+                  <button
+                                className={`w-full text-left flex items-center py-2 px-3 rounded-md transition-colors relative
+                                  ${activeConversation?.id === conversation.chat_history_id 
+                                    ? 'bg-white/10 text-white' 
+                                    : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}
+                                onClick={() => selectConversation(conversation.chat_history_id)}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+                                
+                                <span className="text-sm truncate">
+                                  {conversation.title}
+                                </span>
+                  </button>
         )}
+        
+                            {/* Conversation actions - ellipsis menu (don't show during rename) */}
+                            {sidebarExpanded && renamingConversation !== conversation.chat_history_id && (
+                      <button
+                                className={`absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-400 
+                                  hover:bg-white/10 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity
+                                  ${activeDropdown === conversation.chat_history_id ? 'opacity-100 bg-white/10 text-white' : ''}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveDropdown(activeDropdown === conversation.chat_history_id ? null : conversation.chat_history_id);
+                                }}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                        </svg>
+                      </button>
+                  )}
+                  
+                            {/* Dropdown menu */}
+                            {activeDropdown === conversation.chat_history_id && (
+                              <div className="absolute right-0 mt-1 w-48 rounded-md bg-gray-800 shadow-lg border border-white/10 z-10">
+                                <div className="py-1">
+                  <button
+                                    className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/5 flex items-center"
+                                    onClick={(e) => renameConversation(conversation.chat_history_id, e)}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 0L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                                    Rename
+              </button>
+                <button 
+                                    className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-white/5 flex items-center"
+                                    onClick={(e) => deleteConversation(conversation.chat_history_id, e)}
+                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                    Delete
+                  </button>
+                </div>
+              </div>
+            )}
+            </div>
+                        ))}
+        </div>
+      </div>
+                  ))}
+                
+                {/* Show message if no conversations */}
+                {Object.values(groupedConversations).flat().length === 0 && (
+                  <div className="text-center py-4 text-gray-500">
+                    <p>No conversations yet</p>
+                    <p className="text-xs mt-1">Click "New Chat" to get started</p>
+        </div>
+                )}
+                </div>
+                    </div>
+                  )}
+                  
+          {/* Bottom section - Profile menu (always visible) */}
+          <div className="flex-none border-t border-white/10 mt-auto">
+            <div className="p-4">
+              <ProfileMenu user={null} logout={logout} sidebarExpanded={sidebarExpanded} />
+                </div>
+              </div>
+            </div>
+      </aside>
 
-        {/* Main content area - with explicit height */}
-        <main className="flex-1 flex flex-col h-[calc(100vh-73px)] overflow-hidden">
+      {/* Main content area with proper positioning and transition */}
+      <main className={`flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300 ease-in-out
+        ${sidebarExpanded ? 'pl-64' : 'pl-16'}`}>
+        <div className="flex-1 overflow-y-auto">
           {isLoadingConversation ? (
             // Loading state while fetching conversation details
             <div className="flex-1 flex items-center justify-center">
@@ -1156,14 +1236,14 @@ const Dashboard: React.FC = () => {
                   </div>
                 </div>
           ) : activeConversation ? (
-            // Chat interface with fixed structure
+            // Chat interface with sticky header for title
             <div className="flex flex-col h-full">
-              {/* Conversation header - fixed height */}
-              <div className="flex-shrink-0 sticky top-0 z-10 p-4 border-b border-white/10 backdrop-blur-sm bg-black/30">
+              {/* Sticky conversation header */}
+              <div className="sticky top-0 z-10 p-4 border-b border-white/10 backdrop-blur-sm bg-[#141332]/90">
                 <h2 className="text-xl font-semibold text-white">{activeConversation.title}</h2>
               </div>
               
-              {/* Messages area with fixed height calculation */}
+              {/* Messages area */}
               <div className="flex-1 overflow-y-auto" style={{ height: recommendation ? 'calc(100% - 165px)' : 'calc(100% - 73px)' }}>
                 <div className="p-4 space-y-6">
                   {activeConversation.messages.map((msg, index) => (
@@ -1174,34 +1254,31 @@ const Dashboard: React.FC = () => {
                     <div
                         className={`max-w-3xl rounded-2xl p-4 ${
                           msg.role === 'user' 
-                            ? 'bg-purple-600/30 border border-purple-500/30 ml-12' 
-                            : 'bg-white/10 border border-white/10 mr-12'
+                            ? 'bg-purple-600/30 border border-purple-500/30 ml-12 text-white' 
+                            : 'bg-white/10 border border-white/10 mr-12 text-gray-100'
                         }`}
                       >
                         <div className="whitespace-pre-wrap break-words overflow-hidden">
                           {msg.content}
                       </div>
-                        <div className="text-xs text-gray-400 mt-2 text-right">
-                          {formatTimestamp(msg.timestamp)}
                     </div>
                   </div>
-                    </div>
                   ))}
               <div ref={messagesEndRef} />
-            </div>
-        </div>
-        
+                </div>
+              </div>
+              
               {/* Recommendation panel - collapsible */}
               {recommendation && (
                 <div className="flex-shrink-0 p-4 border-t border-white/10 max-h-[30vh] overflow-y-auto">
                   <div className="p-4 bg-white/5 border border-white/10 rounded-xl">
-                    <h3 className="text-xl font-bold mb-4 text-purple-300">AI Analysis</h3>
+                    <h3 className="text-xl font-bold mb-4 text-purple-200">AI Analysis</h3>
                     
                     <div className="mb-4">
-                      <h4 className="text-lg font-semibold mb-2">Project Summary</h4>
-                      <p className="text-gray-300">{recommendation.summary}</p>
-                </div>
-                
+                      <h4 className="text-lg font-semibold mb-2 text-white">Project Summary</h4>
+                      <p className="text-gray-200">{recommendation.summary}</p>
+                    </div>
+                    
                     {/* Display tech stack recommendations */}
                     {recommendation.tech_stack && recommendation.tech_stack.length > 0 && (
                       <div className="mb-4">
@@ -1215,7 +1292,7 @@ const Dashboard: React.FC = () => {
                               {tech}
                             </span>
                           ))}
-              </div>
+                        </div>
             </div>
           )}
                     
@@ -1239,8 +1316,8 @@ const Dashboard: React.FC = () => {
                                     {skill}
                                   </span>
                                 ))}
-          </div>
-      </div>
+                              </div>
+                            </div>
                           ))}
                         </div>
                       </div>
@@ -1256,8 +1333,8 @@ const Dashboard: React.FC = () => {
                           ))}
                         </ul>
                       </div>
-          )}
-        </div>
+                    )}
+                  </div>
                 </div>
               )}
               
@@ -1308,25 +1385,25 @@ const Dashboard: React.FC = () => {
             <div className="flex-1 flex flex-col items-center justify-center p-4">
               {Object.values(groupedConversations).flat().length > 0 && !showUploadUI ? (
                 // Some conversations exist but none selected - Welcome Back screen
-                <div className="text-center max-w-md mx-auto">
-                  <div className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-6 rounded-xl border border-white/10 backdrop-blur-sm">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto mb-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className={`text-center mx-auto ${sidebarExpanded && isMobile ? 'ml-16 max-w-[calc(100%-4rem)]' : 'max-w-md'}`}>
+                  <div className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-4 sm:p-6 rounded-xl border border-white/10 backdrop-blur-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-3 sm:mb-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-            </svg>
-                    <h2 className="text-xl font-bold mb-2 text-white">Welcome Back!</h2>
-                    <p className="text-gray-300 mb-4">Select a conversation from the sidebar to continue where you left off, or upload a new document to start a fresh analysis.</p>
-                    <div className="flex justify-center">
-          <button 
+                    </svg>
+                    <h2 className="text-lg sm:text-xl font-bold mb-2 text-white">Welcome Back!</h2>
+                    <p className="text-gray-200 mb-4 text-sm sm:text-base">Select a conversation from the sidebar to continue where you left off, or upload a new document to start a fresh analysis.</p>
+                    <div className="flex flex-col sm:flex-row sm:justify-center space-y-2 sm:space-y-0 sm:space-x-2">
+                      <button 
                         onClick={() => {
                           if (!sidebarExpanded) {
                             setSidebarExpanded(true);
                           }
                         }}
-                        className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg text-white font-medium hover:from-blue-500 hover:to-purple-500 transition-all mr-2"
+                        className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg text-white font-medium hover:from-blue-500 hover:to-purple-500 transition-all"
                       >
                         View Conversations
-          </button>
-          <button 
+                      </button>
+                      <button 
                         onClick={() => {
                           setShowUploadUI(true);
                           // Reset any previous upload state
@@ -1338,28 +1415,28 @@ const Dashboard: React.FC = () => {
                           }
                         }}
                         className="px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white font-medium hover:bg-white/20 transition-all"
-          >
+                      >
                         Upload New Document
-          </button>
-              </div>
+                      </button>
             </div>
-                </div>
+          </div>
+      </div>
               ) : (
                 // No conversations exist OR showUploadUI is true - show upload UI
                 <div className="max-w-2xl mx-auto w-full">
                   {Object.values(groupedConversations).flat().length > 0 && (
                     // Only show back button if user has conversations
-                    <button
+          <button 
                       onClick={() => setShowUploadUI(false)}
                       className="flex items-center text-gray-400 hover:text-white mb-4 transition-colors"
-                    >
+          >
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                      </svg>
+            </svg>
                       Back to Conversations
-                    </button>
-                  )}
-                  
+          </button>
+        )}
+
                   {/* Main container with compact fixed layout */}
                   <div className="backdrop-blur-sm bg-white/5 rounded-3xl border border-white/10 p-5 shadow-2xl flex flex-col max-h-[75vh] max-w-xl mx-auto">
                     {/* Section 1: Compact header & drag area */}
@@ -1368,7 +1445,7 @@ const Dashboard: React.FC = () => {
                         <h2 className="text-2xl font-bold mb-1 bg-clip-text text-transparent bg-gradient-to-r from-blue-300 via-purple-300 to-pink-300">
                           Upload Requirements Documents
                         </h2>
-                        <p className="text-sm text-gray-300">
+                        <p className="text-sm text-gray-200">
                           Upload your client's requirements documents to get AI-powered analysis and recommendations
                         </p>
                       </div>
@@ -1389,7 +1466,7 @@ const Dashboard: React.FC = () => {
                           <div className="flex flex-col items-center justify-center">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                            </svg>
+            </svg>
                             <span className="text-base font-medium text-gray-300">
                               Click to upload or drag and drop
                             </span>
@@ -1417,16 +1494,16 @@ const Dashboard: React.FC = () => {
                         <div className="mb-3 flex flex-col min-h-0">
                           <div className="flex justify-between items-center mb-1 flex-shrink-0">
                             <h3 className="text-xs font-medium text-gray-300">Selected files ({files.length})</h3>
-                            <button
+          <button
                               onClick={() => setFiles([])}
                               className="text-xs text-red-400 hover:text-red-300 flex items-center"
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
+            </svg>
                               Delete All
-                            </button>
-                          </div>
+          </button>
+              </div>
                           <div className="overflow-y-auto flex-grow bg-white/5 rounded-lg border border-white/10 min-h-[120px]">
                             {files.map((file, index) => (
                               <div key={`${file.name}-${index}`} className="p-2 border-b border-white/10 flex justify-between items-center">
@@ -1435,21 +1512,21 @@ const Dashboard: React.FC = () => {
                                   <div className="ml-2 flex-1 min-w-0">
                                     <p className="text-sm text-white truncate">{file.name}</p>
                                     <p className="text-xs text-gray-400">{formatFileSize(file.size)}</p>
-                                  </div>
+            </div>
                                 </div>
                                 <button onClick={() => removeFile(index)} className="text-gray-400 hover:text-red-400 ml-2">
                                   <TrashIcon />
-                                </button>
+          </button>
                               </div>
                             ))}
                           </div>
                         </div>
                       )}
-                    </div>
-                    
+        </div>
+        
                     {/* Section 3: Action buttons */}
                     <div className="flex-none mt-3 flex justify-center">
-                      <button
+            <button
                         onClick={handleUpload}
                         disabled={files.length === 0 || isUploading || isProcessing}
                         className="py-2 px-6 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600
@@ -1482,52 +1559,15 @@ const Dashboard: React.FC = () => {
                             </>
                           )}
                         </span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
+            </button>
+          </div>
+        </div>
+      </div>
               )}
             </div>
           )}
-        </main>
-      </div>
-
-      {/* Mobile overlay when sidebar is expanded */}
-      {sidebarExpanded && isMobile && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-10"
-          onClick={toggleSidebar}
-          aria-hidden="true"
-        />
-      )}
-
-      <style>
-        {`
-          @keyframes pulse {
-            0%, 100% {
-              opacity: 0.2;
-            }
-            50% {
-              opacity: 0.8;
-            }
-          }
-          
-          .text-fade {
-            position: relative;
-          }
-          
-          .text-fade::after {
-            content: '';
-            position: absolute;
-            right: 0;
-            top: 0;
-            height: 100%;
-            width: 30%;
-            background: linear-gradient(to right, transparent, rgba(18, 16, 44, 0.95) 90%);
-            pointer-events: none;
-          }
-        `}
-      </style>
+        </div>
+      </main>
     </div>
   );
 };

@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 const LandingPage = () => {
   const { darkMode, toggleDarkMode } = useDarkMode();
   const [theme, setTheme] = useState(true); // Default to dark theme
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Set up dark mode on component mount
   useEffect(() => {
@@ -53,16 +54,18 @@ const LandingPage = () => {
 
       {/* Header with glass effect */}
       <header className="relative z-10 backdrop-blur-sm bg-black/10 border-b border-white/10">
-        <div className="container mx-auto px-6 py-4 flex justify-between items-center">
+        <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+          {/* Responsive logo with smaller size on mobile */}
           <div className="flex items-center">
-            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center">
-              <span className="text-xl font-bold">AQ</span>
+            <div className="h-6 w-6 md:h-8 md:w-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center">
+              <span className="text-sm md:text-base font-bold">AQ</span>
             </div>
-            <h1 className="ml-3 text-xl font-bold text-white"> AlignIQ</h1>
+            <h1 className="ml-1.5 md:ml-2 text-xs md:text-sm font-bold text-white">AlignIQ</h1>
           </div>
           
-          <div className="flex items-center space-x-6">
-            <nav className="hidden md:flex items-center space-x-6">
+          {/* Desktop Navigation */}
+          <div className="hidden md:flex items-center space-x-6">
+            <nav className="flex items-center space-x-6">
               <a href="#features" className="px-3 py-2 text-gray-300 hover:text-white transition-colors rounded-md border border-transparent 
                 hover:border-white/10 hover:bg-white/5 transform transition-all duration-200 hover:translate-y-[-2px] hover:shadow-lg hover:shadow-white/5">
                 <span className="font-medium">Features</span>
@@ -95,6 +98,7 @@ const LandingPage = () => {
               )}
             </button>
             
+            {/* Login/Signup buttons */}
             <div className="flex items-center space-x-3">
               <a 
                 href="/login" 
@@ -115,7 +119,51 @@ const LandingPage = () => {
               </a>
             </div>
           </div>
+          
+          {/* Mobile Navigation */}
+          <div className="flex items-center space-x-2 md:hidden">
+            {/* Login button - compact for mobile */}
+            <a 
+              href="/login" 
+              className="px-3 py-1.5 rounded-md border border-white/20 bg-white/5 text-sm"
+            >
+              Login
+            </a>
+            
+            {/* Mobile Menu Button */}
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="p-2 rounded-md bg-white/5 border border-white/10"
+            >
+              {mobileMenuOpen ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              )}
+            </button>
+          </div>
         </div>
+        
+        {/* Mobile Menu Dropdown */}
+        {mobileMenuOpen && (
+          <div className="md:hidden bg-black/20 backdrop-blur-md border-b border-white/10">
+            <nav className="px-4 py-3 space-y-2">
+              <a href="#features" className="block px-3 py-2 text-gray-300 hover:text-white hover:bg-white/5 rounded-md">
+                Features
+              </a>
+              <a href="#how-it-works" className="block px-3 py-2 text-gray-300 hover:text-white hover:bg-white/5 rounded-md">
+                How It Works
+              </a>
+              <a href="#pricing" className="block px-3 py-2 text-gray-300 hover:text-white hover:bg-white/5 rounded-md">
+                Pricing
+              </a>
+            </nav>
+          </div>
+        )}
       </header>
       
       {/* Hero Section */}
@@ -139,7 +187,7 @@ const LandingPage = () => {
               hover:from-blue-500 hover:to-purple-500 border border-purple-500/30 relative"
             >
               <span className="relative z-10 flex items-center justify-center text-white font-semibold">
-                Get Started
+                Get Started with AlignIQ
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                 </svg>
