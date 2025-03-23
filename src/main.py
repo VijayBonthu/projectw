@@ -22,6 +22,7 @@ origins = [
     "http://localhost",
     "http://localhost:8080",
     "http://localhost:3000",
+    "http://localhost:3001"
 
     # Add any other domains that need to access your API
 ]

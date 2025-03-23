@@ -190,6 +190,10 @@ const Dashboard: React.FC = () => {
   const [renamingConversation, setRenamingConversation] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [showUploadUI, setShowUploadUI] = useState(false);
+  // Near the top of the Dashboard component - add new state for selected messages
+  const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+  // First, add this state near your other state declarations
+  const [showIntegrationModal, setShowIntegrationModal] = useState(false);
 
   // Check authentication on component mount
   useEffect(() => {
@@ -603,63 +607,73 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // Improved handleSendMessage with /chat-with-doc integration
+  // Update handleSendMessage function to ensure proper API payload formatting
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Check BOTH message content AND active conversation existence
-    if (!message.trim() || !activeConversation || isSendingMessage) return;
-    
-    setIsSendingMessage(true);
-    
+    if (!message.trim() || isSendingMessage) return;
+
     try {
-      // Get the token for authorization
+      setIsSendingMessage(true);
+      
       const token = localStorage.getItem('token') || 
-                   localStorage.getItem('regular_token') || 
-                   localStorage.getItem('google_auth_token');
+                    localStorage.getItem('regular_token') || 
+                    localStorage.getItem('google_auth_token');
+      const userId = localStorage.getItem('user_id');
       
-      if (!token) {
-        throw new Error("No authentication token found");
-      }
-      
-      // Get user ID from token or localStorage
-      let userId = localStorage.getItem('user_id');
-      
-      if (!userId) {
-        // Extract user ID from token if not already saved
-        try {
-          const userResponse = await axios.get(`${API_URL}/auth/verifyToken`, {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          });
-          userId = userResponse.data.id;
-          // Store for future use
-          if (typeof userId === 'string') {
-          localStorage.setItem('user_id', userId);
-      }
-    } catch (error) {
-          console.error('Error decoding token:', error);
-          setError('Failed to authenticate user');
+      if (!token || !userId) {
+        setError("Authentication token or user ID not found. Please log in again.");
         return;
-        }
       }
       
-      // Add the user message to the conversation
+      // Get the current conversation ID
+      const chatId = activeConversation?.id;
+      const documentId = activeConversation?.document_id;
+      const conversationTitle = activeConversation?.title || 'Conversation';
+      
+      // Filter messages to only include selected messages for context
+      // Remove any temporary IDs before sending to the backend
+      const selectedContextMessages = activeConversation?.messages
+        .filter(msg => msg.id && selectedMessageIds.includes(msg.id))
+        .map(msg => ({
+          role: msg.role,
+          content: msg.content,
+          timestamp: msg.timestamp
+        })) || [];
+      
+      // Create a new message object for the user's message with a temporary ID for UI only
+      const tempId = `temp-id-${Date.now()}`;
       const newUserMessage: Message = {
+        id: tempId,
         role: 'user',
         content: message,
         timestamp: new Date().toISOString()
       };
       
-      // Create updated conversation with the new message
-      const updatedConversation = {
-        ...activeConversation,
-        messages: [...activeConversation.messages, newUserMessage]
+      // Add new message to selected messages for the UI
+      setSelectedMessageIds(prev => [...prev, tempId]);
+      
+      // Create the user message for the API without the temporary ID
+      const userMessageForApi = {
+        role: 'user',
+        content: message,
+        timestamp: new Date().toISOString()
       };
       
-      // Update the UI immediately with user message
-      setActiveConversation(updatedConversation);
+      // Keep the full conversation history for UI and database
+      const allMessages = activeConversation 
+        ? [...activeConversation.messages, newUserMessage] 
+        : [newUserMessage];
+      
+      // Update UI immediately with user message
+      if (activeConversation) {
+        setActiveConversation({
+          ...activeConversation,
+          messages: allMessages
+        });
+      }
+      
+      // Clear the input
       setMessage('');
       
       // Create a placeholder for assistant's response
@@ -670,18 +684,26 @@ const Dashboard: React.FC = () => {
       };
       
       // Show typing indicator
-      setActiveConversation({
-        ...updatedConversation,
-        messages: [...updatedConversation.messages, assistantPlaceholder]
-      });
+      if (activeConversation) {
+        setActiveConversation(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            messages: [...allMessages, assistantPlaceholder]
+          };
+        });
+      }
       
-      // Get response from AI using chat-with-doc endpoint
-      const chatResponse = await axios.post(
+      // Send request to chat-with-doc with the CORRECT FORMAT matching the Pydantic model
+      const response = await axios.post(
         `${API_URL}/chat-with-doc`,
         {
-          chat_history_id: activeConversation.id,
-          document_id: activeConversation.document_id,
-          message: newUserMessage.content
+          chat_history_id: chatId,
+          user_id: userId,
+          document_id: documentId,
+          // Include selected messages + the new user message
+          message: [...selectedContextMessages, userMessageForApi],
+          title: conversationTitle
         },
         {
           headers: {
@@ -691,59 +713,62 @@ const Dashboard: React.FC = () => {
         }
       );
       
-      // Create the actual assistant message from the response
+      // Process the response and update conversation
       const assistantMessage: Message = {
+        id: `assistant-${Date.now()}`,
         role: 'assistant',
-        content: chatResponse.data.message || "Resources are currently busy. Please try again later.",
+        content: response.data.message || "Resources are currently busy. Please try again later.",
         timestamp: new Date().toISOString()
       };
       
-      // Final conversation state with real assistant response
-      const finalConversation = {
-        ...activeConversation,
-        messages: [...updatedConversation.messages, assistantMessage]
-      };
+      // Add assistant message to selected messages 
+      setSelectedMessageIds(prev => [...prev, assistantMessage.id as string]);
       
-      setActiveConversation(finalConversation);
+      // Final conversation with ALL messages for UI and storage
+      const finalMessages = [...allMessages, assistantMessage];
       
-      // Save the conversation to the database
-      await axios.post(
-        `${API_URL}/chat`,
-        {
-          chat_history_id: activeConversation.id,
-          user_id: userId,
-          document_id: activeConversation.document_id,
-          message: finalConversation.messages,
-          title: activeConversation.title
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        }
-      );
-      
-      // Refresh the conversations list to update titles and order
-      fetchConversations();
-      
-    } catch (error) {
-      console.error('Error sending message:', error);
-      
-      // Remove the loading placeholder and show error
+      // Update UI with final conversation
       if (activeConversation) {
-        const messages = [...activeConversation.messages];
-        if (messages[messages.length - 1]?.role === 'assistant' && 
-            messages[messages.length - 1]?.content === '...') {
-          messages.pop(); // Remove placeholder
-        }
-        
         setActiveConversation({
           ...activeConversation,
-          messages
+          messages: finalMessages
+        });
+        
+        // Save ALL messages to database
+        await axios.post(
+          `${API_URL}/chat`,
+          {
+            chat_history_id: chatId,
+            user_id: userId,
+            document_id: documentId,
+            message: finalMessages, // ALL messages for storage
+            title: conversationTitle
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        
+        // Refresh conversation list
+        fetchConversations();
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      setError('Failed to send message. Please try again.');
+      
+      // Revert the conversation on error
+      if (activeConversation) {
+        setActiveConversation(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            messages: prev.messages.filter(msg => msg.content !== '...')
+          };
         });
       }
-      
-      setError('Failed to send message');
     } finally {
       setIsSendingMessage(false);
     }
@@ -801,9 +826,9 @@ const Dashboard: React.FC = () => {
                      
         if (!token) {
           console.error("No token found");
-          return;
-        }
-        
+        return;
+      }
+      
         // Delete the conversation from the backend
         await axios.delete(`${API_URL}/chat/${chatId}`, {
           headers: {
@@ -822,9 +847,11 @@ const Dashboard: React.FC = () => {
           
           // Remove the deleted conversation from each period
           Object.keys(newState).forEach(period => {
-            newState[period] = newState[period].filter(
-              conv => conv.chat_history_id !== chatId
-            );
+            if (period in newState) {
+              newState[period as keyof GroupedConversations] = newState[period as keyof GroupedConversations].filter(
+                conv => conv.chat_history_id !== chatId
+              );
+            }
           });
           
           return newState;
@@ -854,9 +881,11 @@ const Dashboard: React.FC = () => {
             const newState = {...prevState};
             
             Object.keys(newState).forEach(period => {
-              newState[period] = newState[period].filter(
-                conv => conv.chat_history_id !== chatId
-              );
+              if (period in newState) {
+                newState[period as keyof GroupedConversations] = newState[period as keyof GroupedConversations].filter(
+                  conv => conv.chat_history_id !== chatId
+                );
+              }
             });
             
             return newState;
@@ -1151,8 +1180,235 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  // Modify the useEffect that initializes selected messages
+  useEffect(() => {
+    if (activeConversation && activeConversation.messages) {
+      // Ensure each message has an ID and select all by default
+      const messagesWithIds = activeConversation.messages.map((msg, index) => {
+        // If message doesn't have an ID, add one using index
+        if (!msg.id) {
+          return { ...msg, id: `temp-id-${index}` };
+        }
+        return msg;
+      });
+      
+      // Update the conversation with message IDs if needed
+      if (messagesWithIds.some((msg, i) => !activeConversation.messages[i].id)) {
+        setActiveConversation({
+          ...activeConversation,
+          messages: messagesWithIds
+        });
+      }
+      
+      // Get all message IDs for selection
+      const allMessageIds = messagesWithIds.map(msg => msg.id as string);
+      console.log('Setting initial message IDs:', allMessageIds);
+      setSelectedMessageIds(allMessageIds);
+    }
+  }, [activeConversation?.id]); // Only run when conversation changes
+
+  // Updated toggle message function with better debugging
+  const toggleMessageSelection = (messageId: string) => {
+    console.log('Toggling message selection for:', messageId);
+    setSelectedMessageIds(prev => {
+      const newSelection = prev.includes(messageId)
+        ? prev.filter(id => id !== messageId)
+        : [...prev, messageId];
+      console.log('New selection state:', newSelection);
+      return newSelection;
+    });
+  };
+
+  // Debug function to see why checkboxes aren't updating
+  const debugSelectionState = (msgId: string) => {
+    const isSelected = selectedMessageIds.includes(msgId);
+    console.log(`Message ${msgId} selected: ${isSelected}`);
+    console.log('All selected IDs:', selectedMessageIds);
+    return isSelected;
+  };
+
+  // Fix the allMessagesSelected function - it should be a value, not a function call
+  const allMessagesSelected = 
+    activeConversation?.messages
+      .filter(msg => msg.id)
+      .every(msg => msg.id && selectedMessageIds.includes(msg.id)) || false;
+
+  // Fix the toggleAllMessages function
+  const toggleAllMessages = () => {
+    if (activeConversation) {
+      const allMessageIds = activeConversation.messages
+        .filter(msg => msg.id)
+        .map(msg => msg.id as string);
+      
+      if (allMessageIds.every(id => selectedMessageIds.includes(id))) {
+        // Deselect all messages
+        setSelectedMessageIds([]);
+        console.log('Deselected all messages');
+      } else {
+        // Select all messages
+        setSelectedMessageIds(allMessageIds);
+        console.log('Selected all messages:', allMessageIds);
+      }
+    }
+  };
+
+  // Updated Jira integration function to use a popup window
+  const handleJiraIntegration = async () => {
+    try {
+      // Get the authentication token
+      const token = localStorage.getItem('token') || 
+                    localStorage.getItem('regular_token') || 
+                    localStorage.getItem('google_auth_token');
+      
+      if (!token) {
+        toast.error("Authentication required. Please log in again.");
+        return;
+      }
+      
+      console.log("Starting Jira integration...");
+      
+      // Call the backend to get the authorization URL
+      const response = await axios.get(`${API_URL}/auth/jira/login`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      console.log("Jira response:", response.data);
+      
+      // Extract the URL from the response
+      if (response.data && response.data.url) {
+        // Calculate popup window position (centered)
+        const width = 600;
+        const height = 700;
+        const left = window.screenX + (window.outerWidth - width) / 2;
+        const top = window.screenY + (window.outerHeight - height) / 2;
+        
+        // Open URL in a popup window
+        const popup = window.open(
+          response.data.url,
+          'JiraAuthPopup',
+          `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`
+        );
+        
+        // Focus the popup
+        if (popup) {
+          popup.focus();
+        }
+        
+        // Show a toast to guide the user
+        toast.success("Please complete the Jira authorization in the popup window.");
+        
+        // Close the integration modal
+        setShowIntegrationModal(false);
+      } else {
+        toast.error("Invalid response from server. Please try again.");
+      }
+    } catch (error) {
+      console.error("Jira integration error:", error);
+      toast.error("Failed to connect to Jira. Please try again.");
+    }
+  };
+
+  // Add this effect to listen for the Jira authentication token
+  useEffect(() => {
+    // Function to handle messages from popup window
+    const handleAuthMessage = (event) => {
+      console.log("Received message from popup:", event.data);
+      
+      // Check if this is a Jira auth message
+      if (event.data && event.data.type === 'jira_auth_success') {
+        // Store the Jira access token
+        const jiraToken = event.data.access_token;
+        console.log("Received Jira token:", jiraToken?.substring(0, 10) + "...");
+        
+        // Save in localStorage
+        localStorage.setItem('jira_authorization', jiraToken);
+        
+        // Show success message
+        toast.success("Successfully connected to Jira!");
+        
+        // You could also update UI state to show Jira is connected
+      }
+    };
+    
+    // Add event listener for messages
+    window.addEventListener('message', handleAuthMessage);
+    
+    // Cleanup on unmount
+    return () => {
+      window.removeEventListener('message', handleAuthMessage);
+    };
+  }, []);
+
   return (
-    <div className="relative flex h-screen bg-[#141332]">
+    <div className="h-screen overflow-hidden flex flex-col bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e] text-white">
+      
+      {/* Integration Button - Fixed position in top right */}
+      <button 
+        onClick={() => setShowIntegrationModal(true)}
+        className="fixed top-4 right-4 z-50 px-4 py-2 rounded-md border border-white/20 bg-white/5 backdrop-blur-sm 
+          hover:bg-white/10 transition-all transform duration-200 hover:translate-y-[-2px] 
+          active:translate-y-[1px] text-white font-medium"
+      >
+        Integration
+      </button>
+      
+      {/* Modal for integrations (initially hidden) */}
+      {showIntegrationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-[#1a1745] p-6 rounded-lg border border-white/10 w-11/12 max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-white">Integration Options</h3>
+              <button 
+                onClick={() => setShowIntegrationModal(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              {/* GitHub Integration with inline SVG */}
+              <button className="w-full p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-left flex items-center">
+                <svg className="h-6 w-6 mr-3 text-white" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <path fillRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                </svg>
+                Connect to GitHub
+              </button>
+              
+              {/* Jira Integration with inline SVG */}
+              <button 
+                onClick={handleJiraIntegration}
+                className="w-full p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-left flex items-center"
+              >
+                <svg className="h-6 w-6 mr-3" viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M249.68 240.026L137.887 128.214l-4.464-4.465h116.257v116.277h-.001zm0 116.278v-116.278l111.793-111.793 4.464-4.464H249.68v116.257z" fill="#2684FF"/>
+                  <path d="M249.68 240.026L137.887 351.838l-4.464 4.465h116.257V240.026zm0-116.277V7.471l-111.793 111.81-4.464 4.475 116.257-.007z" fill="white"/>
+                </svg>
+                Connect to Jira
+              </button>
+              
+              {/* Azure DevOps Integration with inline SVG */}
+              <button className="w-full p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-left flex items-center">
+                <svg className="h-6 w-6 mr-3" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M0 4a4 4 0 014-4h24a4 4 0 014 4v24a4 4 0 01-4 4H4a4 4 0 01-4-4V4z" fill="#0078D7"/>
+                  <path d="M22.7 11.9L25 11l-6.1-2.8v.1l-7.2 8.4l3.2 3.9 7.8-8.7zm-5 13.5l7.9-5.1-2.3-1.2-5.6 6.3zm-13.6-5.7L9 15.8l2.2-2.5-3.4-3.1z" fill="white"/>
+                </svg>
+                Connect to Azure DevOps
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Header - fixed height */}
+      <header className="flex-shrink-0 relative z-10 backdrop-blur-sm bg-black/10 border-b border-white/10">
+        {/* Existing header content */}
+      </header>
+
       {/* Sidebar with better collapsed state organization */}
       <aside className={`fixed inset-y-0 left-0 z-20 transition-all duration-300 transform bg-[#120f2d] border-r border-gray-800 
         ${sidebarExpanded ? 'w-64' : 'w-16'}`}>
@@ -1165,13 +1421,13 @@ const Dashboard: React.FC = () => {
                 <div className="flex items-center">
                   <div className="h-8 w-8 rounded-md bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center">
                     <span className="text-sm font-bold text-white">AQ</span>
-                  </div>
+            </div>
                   <span className="ml-3 text-4xl leading-snug font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-300 to-purple-300">
                     AlignIQ
                   </span>
                 </div>
-              </div>
-              
+        </div>
+        
               {/* New Chat and Toggle buttons side by side with standard padding */}
               <div className="px-3 py-3">
                 <div className="flex items-center space-x-3">
@@ -1191,15 +1447,15 @@ const Dashboard: React.FC = () => {
                   </button>
                   
                   {/* Toggle button - same size as before */}
-                  <button 
+          <button 
                     onClick={toggleSidebar}
                     className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded hover:bg-white/5 transition-colors !p-0"
                     title="Collapse sidebar"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
-                    </svg>
-                  </button>
+            </svg>
+          </button>
                 </div>
               </div>
             </>
@@ -1215,21 +1471,21 @@ const Dashboard: React.FC = () => {
               
               {/* 2. Toggle button in the middle */}
               <div className="flex-none py-3 flex justify-center">
-                <button 
+          <button 
                   onClick={toggleSidebar}
                   className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-white/5 transition-colors !p-0"
                   title="Expand sidebar"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
+            </svg>
+          </button>
               </div>
-              
+        
               {/* 3. New chat button (just +) at the bottom */}
               <div className="flex-none py-3 flex justify-center">
-                <button 
-                  onClick={() => {
+          <button
+            onClick={() => {
                     setShowUploadUI(true);
                     setActiveConversation(null);
                   }}
@@ -1239,9 +1495,9 @@ const Dashboard: React.FC = () => {
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
-                  </svg>
-                </button>
-              </div>
+            </svg>
+          </button>
+        </div>
             </>
           )}
           
@@ -1251,7 +1507,7 @@ const Dashboard: React.FC = () => {
               <div className="px-4">
                 <h3 className="text-xs font-medium text-gray-300 mb-2">
                   Recent conversations
-                </h3>
+            </h3>
                 
                 {/* Conversations grouped by time period */}
                 {Object.entries(groupedConversations)
@@ -1291,7 +1547,7 @@ const Dashboard: React.FC = () => {
                               </form>
                             ) : (
                               /* Regular button when not renaming */
-                  <button
+            <button
                                 className={`w-full text-left flex items-center py-2 px-3 rounded-md transition-colors relative
                                   ${activeConversation?.id === conversation.chat_history_id 
                                     ? 'bg-white/10 text-white' 
@@ -1300,7 +1556,7 @@ const Dashboard: React.FC = () => {
                               >
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
+                </svg>
                                 
                                 <span className="text-sm truncate">
                                   {conversation.title}
@@ -1322,14 +1578,14 @@ const Dashboard: React.FC = () => {
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
                         </svg>
-                      </button>
+              </button>
                   )}
                   
                             {/* Dropdown menu */}
                             {activeDropdown === conversation.chat_history_id && (
                               <div className="absolute right-0 mt-1 w-48 rounded-md bg-gray-800 shadow-lg border border-white/10 z-10">
                                 <div className="py-1">
-                  <button
+                <button 
                                     className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/5 flex items-center"
                                     onClick={(e) => renameConversation(conversation.chat_history_id, e)}
                                   >
@@ -1346,11 +1602,11 @@ const Dashboard: React.FC = () => {
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                     </svg>
                                     Delete
-                  </button>
+                </button>
                 </div>
               </div>
             )}
-            </div>
+          </div>
                         ))}
         </div>
       </div>
@@ -1387,9 +1643,9 @@ const Dashboard: React.FC = () => {
                 <svg className="animate-spin h-10 w-10 mx-auto mb-4 text-purple-500" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
+                  </svg>
                 <p className="text-gray-400">Loading conversation...</p>
-                  </div>
+                </div>
                 </div>
           ) : activeConversation ? (
             // Chat interface with sticky header for title
@@ -1401,12 +1657,36 @@ const Dashboard: React.FC = () => {
               
               {/* Messages area */}
               <div className="flex-1 overflow-y-auto" style={{ height: recommendation ? 'calc(100% - 165px)' : 'calc(100% - 73px)' }}>
+                {/* Select All checkbox header */}
+                <div className="sticky top-0 z-10 p-3 bg-[#141332]/90 border-b border-white/10 flex items-center">
+                  <label className="flex items-center space-x-2 text-sm text-gray-300">
+                    <input 
+                      type="checkbox" 
+                      checked={allMessagesSelected} 
+                      onChange={toggleAllMessages}
+                      className="form-checkbox h-4 w-4 rounded text-purple-500"
+                    />
+                    <span>Include all messages as context</span>
+                  </label>
+                </div>
+                
                 <div className="p-4 space-y-6">
-                  {activeConversation.messages.map((msg, index) => (
-                    <div key={msg.id || index} className={`mb-4 ${msg.role === 'user' ? 'mr-12' : 'ml-12'}`}>
+                  {/* Inside the message rendering section - looking for both user and AI messages */}
+                  {activeConversation && activeConversation.messages.map((msg, index) => (
+                    <div key={msg.id || index} className={`mb-4 flex items-start ${msg.role === 'user' ? 'mr-12' : 'ml-12'}`}>
+                      {/* Checkbox for message selection */}
+                      <div className="mr-2 mt-2">
+                        <input 
+                          type="checkbox"
+                          checked={msg.id ? debugSelectionState(msg.id) : false}
+                          onChange={() => msg.id && toggleMessageSelection(msg.id)}
+                          className="form-checkbox h-4 w-4 rounded text-purple-500 cursor-pointer"
+                        />
+                      </div>
+                      
                       {msg.role === 'assistant' ? (
                         // AI message with export options
-                        <div className="flex flex-col space-y-2 bg-[#1a1745] rounded-lg p-4 max-w-3xl">
+                        <div className="flex-1 flex flex-col space-y-2 bg-[#1a1745] rounded-lg p-4 max-w-3xl">
                           <div className="flex items-start space-x-3">
                             <div className="h-8 w-8 rounded-md bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center flex-shrink-0">
                               <span className="text-sm font-bold text-white">AI</span>
@@ -1419,7 +1699,7 @@ const Dashboard: React.FC = () => {
                               
                               {/* Export options bar */}
                               <div className="mt-4 pt-2 border-t border-white/10 flex justify-end space-x-2">
-                                <button 
+                  <button
                                   onClick={() => handleCopyMessage(msg)}
                                   className="flex items-center text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-white/5 transition-colors !p-0"
                                 >
@@ -1427,33 +1707,33 @@ const Dashboard: React.FC = () => {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
                                   </svg>
                                   Copy
-                                </button>
-                                
-                                <button 
+                  </button>
+                  
+                      <button
                                   onClick={() => handleDownloadPDF(msg)}
                                   className="flex items-center text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-white/5 transition-colors !p-0"
-                                >
+                      >
                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                  </svg>
+                        </svg>
                                   Download PDF
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
+                      </button>
+                    </div>
+                </div>
+              </div>
+            </div>
+          ) : (
                         // User message - keep as is
-                        <div className="flex flex-col space-y-2 bg-[#232142] rounded-lg p-4">
+                        <div className="flex-1 flex flex-col space-y-2 bg-[#232142] rounded-lg p-4">
                           <div className="flex items-start space-x-3">
                             <div className="h-8 w-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
                               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
                                 <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                              </svg>
-                            </div>
+                    </svg>
+                  </div>
                             <div className="flex-1">
                               <p className="text-white whitespace-pre-wrap">{msg.content}</p>
-                            </div>
+                </div>
                           </div>
                         </div>
                       )}
@@ -1481,7 +1761,7 @@ const Dashboard: React.FC = () => {
                         <div className="flex flex-wrap gap-2">
                           {recommendation.tech_stack.map((tech, index) => (
                             <span 
-                              key={index} 
+                    key={index}
                               className="px-3 py-1 bg-blue-500/20 border border-blue-500/30 rounded-full text-sm"
                             >
                               {tech}
@@ -1511,10 +1791,10 @@ const Dashboard: React.FC = () => {
                                     {skill}
                                   </span>
                                 ))}
-                              </div>
-                            </div>
+                      </div>
+                    </div>
                           ))}
-                        </div>
+                  </div>
                       </div>
                     )}
                     
@@ -1527,9 +1807,9 @@ const Dashboard: React.FC = () => {
                             <li key={index}>{item}</li>
                           ))}
                         </ul>
-                      </div>
-                    )}
-                  </div>
+            </div>
+          )}
+        </div>
                 </div>
               )}
               

@@ -51,7 +51,20 @@ class ChatHistory(Base):
     user_id = Column(String,ForeignKey(User.user_id), nullable=False,index=True)
     document_id = Column(String, ForeignKey(UserDocuments.document_id), nullable=False, index=True)
     active_tag = Column(Boolean, nullable=False, default=text("True"))
-    message = Column(String, nullable=False)
     title = Column(String, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
     modified_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
+    message = Column(String, nullable=False)
+    
+
+class SelectedChat(Base):
+    __tablename__ = "selected_chat"
+    selected_chat_id = Column(String, primary_key=True, nullable=False, index=True, default=lambda: str(uuid.uuid4()))
+    chat_history_id = Column(String, ForeignKey(ChatHistory.chat_history_id), nullable=False, index=True)
+    document_id = Column(String, ForeignKey(UserDocuments.document_id), nullable=False, index=True)
+    user_id = Column(String, ForeignKey(User.user_id), nullable=False, index=True)
+    title = Column(String, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
+    modified_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
+    message = Column(String, nullable=False)
+    
