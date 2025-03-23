@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from sqlalchemy.orm import Session
 from typing import Dict, List
 import models
@@ -154,3 +156,33 @@ async def get_single_user_chat_history(user_id:str, chat_history_id:str, db:Sess
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error")
+    
+async def save_chat_with_doc(chat_context:Dict, db:Session):
+    """
+    saves the selected chat to continue the conversation
+
+    Args: chat_context: Dict,
+    db: Session
+
+    Returns: Dict: saved chat details
+
+    """
+    try:
+        chat_details = db.query(models.SelectedChat).filter(models.SelectedChat.chat_history_id == chat_context["chat_history_id"]).first()
+        if chat_details:
+            chat_details.message = json.dumps(chat_context["message"])
+            chat_details.modified_at = text("now()")
+            chat_details.title = chat_context["title"]
+            db.commit()
+        else:
+            logger.info(f"Hitting in else block")
+            chat_context["message"] = json.dumps(chat_context["message"])
+            content = models.SelectedChat(**chat_context)
+            logger.info(f"content: {content}")
+            db.add(content)
+            db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error in saving the selected chat: {str(e)}")
+        
+    

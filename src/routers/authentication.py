@@ -3,7 +3,7 @@ from fastapi import Depends, HTTPException, Request, APIRouter, status, Header
 from sqlalchemy.orm import Session
 from models import get_db
 from database_scripts import create_user,UserCreationError, get_user_details
-from utils.token_generation import create_token, verify_password, TokenDecoder, validate_app_user, validate_token_incoming_requests
+from utils.token_generation import create_token, verify_password, TokenDecoder, validate_app_user, validate_token_incoming_requests, token_validator
 from p_model_type import Registration_login_password, login_details
 import logging
 from jira_logic.jira_components import get_jira_user_info
@@ -28,17 +28,21 @@ async def login():
 
     if state:
         auth_states[state] = True
+    print(auth_url)
     return RedirectResponse(url=auth_url)
 
 @router.get("/auth/callback", status_code=status.HTTP_200_OK)
 async def callback(request: Request, db:Session=Depends(get_db)):
     # Extract the state from query parameters
     state = request.query_params.get("state")
+    logger.info(f"State: {state}")
     if not state or state not in auth_states:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Link already expired, Try to login in again")
     try: 
         #Uses Google authentication to login
+        logger.info(f"Request URL: {request.url}")
         response =auth_callback(url=request.url)
+        logger.info(f"Response: {response}")
         if response.get("message") == "bad request":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Issue with your login, Please try again")
         user_data = response["user"]
@@ -152,33 +156,35 @@ def log_into_account(login_details:login_details, db:Session=Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     
 @router.get("/auth/jira/login")
-async def jira_login(request: Request, token: str = None):
+async def jira_login(request: Request, current_user: dict = Depends(token_validator)):
     """Initiates Jira OAuth flow"""
     # Validate the token that was passed in the query param
-    if token:
-        try:
-            # Decode and validate the token
-            validate_token_incoming_requests(token=token)
-            # Verify this is a valid user token
-            # ... your validation logic here ...
-        except Exception as e:
-            logger.error(f"Token validation error: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
-            )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication token required"
-        )
+    # if current_user:
+    #     try:
+    #         # Decode and validate the token
+    #         validate_token_incoming_requests(token=token)
+    #         # Verify this is a valid user token
+    #         # ... your validation logic here ...
+    #     except Exception as e:
+    #         logger.error(f"Token validation error: {str(e)}")
+    #         raise HTTPException(
+    #             status_code=status.HTTP_401_UNAUTHORIZED,
+    #             detail="Invalid or expired token"
+    #         )
+    # else:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_401_UNAUTHORIZED,
+    #         detail="Authentication token required"
+    #     )
     logger.info(f"Jira login endpoint called")
+    logger.info(f"Current user: {current_user}")
+    logger.info(f"Current user type: {request}")
     try:
         auth_url, state = await JiraOAuth().get_authorization_url()
         auth_states[state] = True
         logger.info(f"Auth states updated: {auth_states}")
         logger.info(f"authorization_url: {auth_url}")
-        return RedirectResponse(url=auth_url)
+        return {"url": auth_url}
     except Exception as e:
         logger.error(f"Error in jira_login: {str(e)}")
         raise HTTPException(

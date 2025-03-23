@@ -2,7 +2,7 @@ from fastapi import File, UploadFile, Form, Depends, APIRouter, HTTPException, s
 from fastapi.responses import HTMLResponse
 import os
 from utils.token_generation import token_validator
-from utils.chat_history import save_chat_history, delete_chat_history, get_user_chat_history_details,get_single_user_chat_history
+from utils.chat_history import save_chat_history, delete_chat_history, get_user_chat_history_details,get_single_user_chat_history, save_chat_with_doc
 from getdata import ExtractText
 from processdata import AccessLLM
 from config import settings
@@ -16,6 +16,7 @@ from jira_logic.jira_components import get_jira_user_info
 from p_model_type import JiraTokenRequest, ChatHistoryDetails
 import asyncio
 import uuid
+from datetime import datetime
 
 router = APIRouter()
 # accessllm = AccessLLM(api_key=os.getenv("OPENAI_CHATGPT"))
@@ -405,8 +406,45 @@ async def get_user_chat_history_by_id(chat_history_id:str,current_user = Depends
     return {"user_details": single_record}
 
 @router.post('/chat-with-doc')
-async def conversation_with_doc(request:Request,current_user = Depends(token_validator), db:Session=Depends(get_db)):
-    chat_context = request.json()
-    print(f"chat_context: {chat_context}")
-    return {"message": "this is from LLM chat responding to user question regarding the document and its recommendataion: this needs to be implemented"}
-    # return ProjectScopingAgent.chat_with_doc(context=)
+async def conversation_with_doc(request:ChatHistoryDetails,current_user = Depends(token_validator), db:Session=Depends(get_db)):
+    """
+    Selected context is used to chat with the LLM
+
+    Args:
+    request: ChatHistoryDetails,
+    current_user: dict,
+    db: Session,
+    sample received request
+    {
+        'chat_history_id': 'xxx', 
+        'user_id': 'xxx', 
+        'document_id': 'xxx', 
+        'message': [
+        {'role': 'user', 'content': 'xxx', 'timestamp': '2025-03-22T05:48:47.559Z'}, 
+        {'role': 'assistant', 'content': 'xxx', 'timestamp': '2025-03-22T05:48:47.935Z'}, 
+        {'role': 'user', 'content': 'xxx', 'timestamp': '2025-03-22T05:49:18.340Z'}
+        ], 
+        'title': ' dummy title for now'
+    }
+
+    Returns:
+    Dict: LLM response to user question regarding the document and its recommendataion
+    """
+    try:
+        if current_user["regular_login_token"]["id"] == request.user_id:
+            chat_context = request.model_dump()
+            #parse message for LLM and send it for query
+            LLM_response = ProjectScopingAgent.chat_with_doc(context=chat_context)
+            return {"message": f"{LLM_response['message']}"}
+        else:
+            raise HTTPException(status_code=400, detail=f"User ID mismatch")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in chat-with-doc: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error")
+    finally:
+        chat_context["message"].append({"role": "assistant", "content": LLM_response, "timestamp": datetime.now().isoformat()})
+        await save_chat_with_doc(chat_context=chat_context, db=db)
+
+    
