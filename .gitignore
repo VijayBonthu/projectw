@@ -10,6 +10,7 @@ src/app.log
 project_scoping_report*
 src/test.py
 src/ml_models.py
+jira_attachments*
 
 #frontend
 # Logs

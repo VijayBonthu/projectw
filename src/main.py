@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import models
 from models import engine
 from fastapi.middleware.cors import CORSMiddleware
-from routers import authentication, services
+from routers import authentication, services, third_party_integrations
 from utils.logger import setup_logger
 
 # Setup logging once at application startup
@@ -36,6 +36,7 @@ app.add_middleware(
 
 app.include_router(authentication.router, prefix="/api/v1", tags=["authentication"])
 app.include_router(services.router, prefix="/api/v1", tags=["services"])
+app.include_router(third_party_integrations.router, prefix="/api/v1", tags=["third party integrations"])
 
 @app.get("/")
 async def home():
