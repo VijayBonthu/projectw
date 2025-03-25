@@ -176,9 +176,9 @@ async def jira_login(request: Request, current_user: dict = Depends(token_valida
     #         status_code=status.HTTP_401_UNAUTHORIZED,
     #         detail="Authentication token required"
     #     )
-    logger.info(f"Jira login endpoint called")
-    logger.info(f"Current user: {current_user}")
-    logger.info(f"Current user type: {request}")
+    # logger.info(f"Jira login endpoint called")
+    # logger.info(f"Current user: {current_user}")
+    # logger.info(f"Current user type: {request}")
     try:
         auth_url, state = await JiraOAuth().get_authorization_url()
         auth_states[state] = True

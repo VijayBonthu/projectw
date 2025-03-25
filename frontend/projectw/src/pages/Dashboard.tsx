@@ -6,6 +6,9 @@ import { toast } from 'react-hot-toast';
 import * as marked from 'marked'; // Change to namespace import
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+// Import the modular Sidebar
+import { Sidebar } from '../components/sidebar';
+import RightSidebar from '../components/integrations/RightSidebar';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -51,114 +54,6 @@ interface GroupedConversations {
   older: ConversationMetadata[];
 }
 
-const ProfileMenu = ({ user, logout, sidebarExpanded }) => {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const menuRef = useRef(null);
-  
-  // Close menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setIsMenuOpen(false);
-      }
-    };
-    
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-  
-  // Get initials for avatar
-  const getInitials = (name) => {
-    if (!name) return 'U';
-    return name.split(' ').map(n => n[0]).join('').toUpperCase();
-  };
-  
-  // Get user email from localStorage
-  const userEmail = localStorage.getItem('user_email') || 'user@example.com';
-  const userName = userEmail.split('@')[0];
-  const userInitials = getInitials(userName);
-  
-  return (
-    <div className="relative" ref={menuRef}>
-      <button 
-        onClick={() => setIsMenuOpen(!isMenuOpen)}
-        className={`flex items-center rounded-lg transition-colors hover:bg-white/5
-          ${sidebarExpanded ? 'w-full space-x-3 p-3' : 'w-10 h-10 justify-center mx-auto'}`}
-        title={!sidebarExpanded ? "Account menu" : ""}
-      >
-        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center flex-shrink-0">
-          <span className="text-sm font-bold text-white">{userInitials}</span>
-        </div>
-        
-        {sidebarExpanded && (
-          <>
-            <div className="flex-grow min-w-0">
-              <p className="text-sm font-medium text-white truncate">{userName}</p>
-              <p className="text-xs text-gray-400 truncate">{userEmail}</p>
-            </div>
-            <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 text-gray-400 transition-transform ${isMenuOpen ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </>
-        )}
-      </button>
-      
-      {/* Dropdown menu */}
-      {isMenuOpen && (
-        <div className={`bg-gray-800 rounded-lg shadow-lg border border-white/10 overflow-hidden
-          ${sidebarExpanded 
-            ? 'absolute bottom-full left-0 mb-2 w-full' 
-            : 'fixed bottom-[70px] left-16 mb-2 w-48'}`}
-        >
-          <div className="py-1">
-            <button 
-              className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/5 flex items-center"
-              onClick={() => setIsMenuOpen(false)}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              Account Settings
-            </button>
-            <button 
-              className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/5 flex items-center"
-              onClick={() => setIsMenuOpen(false)}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              Help Center
-            </button>
-            <button 
-              className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/5 flex items-center"
-              onClick={() => setIsMenuOpen(false)}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-              </svg>
-              Give Feedback
-            </button>
-            <hr className="border-white/10 my-1" />
-            <button 
-              className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-white/5 flex items-center"
-              onClick={() => {
-                logout();
-                setIsMenuOpen(false);
-              }}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              Logout
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
 const Dashboard: React.FC = () => {
   const { isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
@@ -194,6 +89,9 @@ const Dashboard: React.FC = () => {
   const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
   // First, add this state near your other state declarations
   const [showIntegrationModal, setShowIntegrationModal] = useState(false);
+  const [showIntegrationPanel, setShowIntegrationPanel] = useState(false);
+  const [integrationDropdownOpen, setIntegrationDropdownOpen] = useState(false);
+  const [integrationTab, setIntegrationTab] = useState<'jira' | 'github' | 'azure'>('jira');
 
   // Check authentication on component mount
   useEffect(() => {
@@ -208,8 +106,7 @@ const Dashboard: React.FC = () => {
   // Simplify the resize effect
   useEffect(() => {
     const handleResize = () => {
-      const mobile = window.innerWidth < 768;
-      setIsMobile(mobile);
+      setIsMobile(window.innerWidth < 768);
     };
     
     // Set initial state
@@ -572,7 +469,7 @@ const Dashboard: React.FC = () => {
             messages = JSON.parse(details.message);
           } else if (Array.isArray(details.message)) {
             messages = details.message;
-          } else {
+            } else {
             console.error("Unexpected message format:", details.message);
             messages = [];
           }
@@ -598,8 +495,8 @@ const Dashboard: React.FC = () => {
         }
             } else {
         throw new Error("Invalid response format");
-            }
-          } catch (error) {
+      }
+    } catch (error) {
       console.error('Error loading conversation:', error);
       setError('Failed to load conversation');
     } finally {
@@ -655,7 +552,7 @@ const Dashboard: React.FC = () => {
       
       // Create the user message for the API without the temporary ID
       const userMessageForApi = {
-        role: 'user',
+      role: 'user',
         content: message,
         timestamp: new Date().toISOString()
       };
@@ -764,7 +661,7 @@ const Dashboard: React.FC = () => {
         setActiveConversation(prev => {
           if (!prev) return null;
           return {
-            ...prev,
+        ...prev,
             messages: prev.messages.filter(msg => msg.content !== '...')
           };
         });
@@ -797,20 +694,11 @@ const Dashboard: React.FC = () => {
 
   // Update the handleLogout function in Dashboard component
   const handleLogout = () => {
-    // Clear all storage items
-    localStorage.removeItem('token');
-    localStorage.removeItem('regular_token');
-    localStorage.removeItem('google_auth_token');
-    localStorage.removeItem('user_id');
-    sessionStorage.clear(); // Clear all session storage items too
-
-    // Remove authorization header
-    delete axios.defaults.headers.common['Authorization'];
+    // First, clear any Jira tokens
+    localStorage.removeItem('jira_authorization');
     
-    // Call the logout function from AuthContext
+    // Then perform the normal logout
     logout();
-    
-    // Navigate to login page
     navigate('/login');
   };
 
@@ -934,7 +822,7 @@ const Dashboard: React.FC = () => {
         console.error("No token found");
         return;
       }
-      
+
       // First fetch the complete conversation details
       const chatResponse = await axios.get(`${API_URL}/chat/${chatId}`, {
         headers: {
@@ -1252,389 +1140,194 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // Updated Jira integration function to use a popup window
-  const handleJiraIntegration = async () => {
-    try {
-      // Get the authentication token
-      const token = localStorage.getItem('token') || 
-                    localStorage.getItem('regular_token') || 
-                    localStorage.getItem('google_auth_token');
+  // Updated Jira integration function to match exact backend flow
+  const handleJiraIntegration = () => {
+    // Get the authentication token
+    const authToken = localStorage.getItem('token') || 
+                     localStorage.getItem('regular_token') || 
+                     localStorage.getItem('google_auth_token');
+    
+    if (!authToken) {
+      toast.error("Authentication required. Please log in again.");
+      return;
+    }
+    
+    // Define popup dimensions
+    const width = 600;
+    const height = 600;
+    const left = window.screen.width / 2 - width / 2;
+    const top = window.screen.height / 2 - height / 2;
+    
+    // Show a loading toast
+    const loadingToast = toast.loading("Connecting to Jira...");
+    
+    // Make the request with proper Authorization header
+    fetch(`${API_URL}/auth/jira/login`, {
+      method: 'GET',
+      headers: {
+        'accept': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      }
+    })
+    .then(response => {
+      toast.dismiss(loadingToast);
       
-      if (!token) {
-        toast.error("Authentication required. Please log in again.");
+      if (!response.ok) {
+        throw new Error(`Auth request failed with status: ${response.status}`);
+      }
+      
+      return response.json(); // Expecting JSON with auth_url
+    })
+    .then(data => {
+      console.log("Received auth data:", data);
+      
+      // Get the auth_url from the response
+      const authUrl = data.auth_url || data.url;
+      
+      if (!authUrl) {
+        throw new Error("No authentication URL received from server");
+      }
+      
+      console.log("Opening Jira auth popup to:", authUrl);
+      
+      // Open the popup with the Atlassian auth URL
+      const popup = window.open(
+        authUrl,
+        'Jira_Authorization',
+        `width=${width},height=${height},left=${left},top=${top}`
+      );
+      
+      if (!popup) {
+        toast.error("Popup blocked. Please allow popups for this site.");
         return;
       }
       
-      console.log("Starting Jira integration...");
-      
-      // Call the backend to get the authorization URL
-      const response = await axios.get(`${API_URL}/auth/jira/login`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
+      // Listen for messages from the popup
+      const handleAuthMessage = (event) => {
+        console.log("Received message:", event.origin, event.data);
+        
+        // Check if this message contains Jira token information
+        if (event.data && event.data.type === 'jira_auth_success') {
+          // Get the token (check both possible property names)
+          const jiraToken = event.data.token || event.data.access_token;
+          
+          if (jiraToken) {
+            console.log("Received Jira token, saving to localStorage");
+            
+            // Store the token in localStorage
+            localStorage.setItem('jira_authorization', jiraToken);
+            
+            // Close the popup
+            popup.close();
+            
+            // Clean up the event listener
+            window.removeEventListener('message', handleAuthMessage);
+            
+            // Show success message
+            toast.success("Successfully connected to Jira!");
+            
+            // Toggle the panel if it's not already visible
+            if (!showIntegrationPanel) {
+              setShowIntegrationPanel(true);
+            }
+            
+            // Ensure the Jira tab is active
+            setIntegrationTab('jira');
+            
+            // Trigger UI updates
+            window.dispatchEvent(new Event('storage'));
+            window.dispatchEvent(new CustomEvent('jiraAuthUpdate'));
+          } else {
+            console.error("Received success message but no token found");
+            toast.error("Authentication successful but no token received");
+          }
         }
-      });
+      };
       
-      console.log("Jira response:", response.data);
+      // Add the message listener
+      window.addEventListener('message', handleAuthMessage);
       
-      // Extract the URL from the response
-      if (response.data && response.data.url) {
-        // Calculate popup window position (centered)
-        const width = 600;
-        const height = 700;
-        const left = window.screenX + (window.outerWidth - width) / 2;
-        const top = window.screenY + (window.outerHeight - height) / 2;
-        
-        // Open URL in a popup window
-        const popup = window.open(
-          response.data.url,
-          'JiraAuthPopup',
-          `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`
-        );
-        
-        // Focus the popup
-        if (popup) {
-          popup.focus();
+      // Clean up if popup is closed manually
+      const checkPopup = setInterval(() => {
+        if (popup && popup.closed) {
+          clearInterval(checkPopup);
+          window.removeEventListener('message', handleAuthMessage);
         }
-        
-        // Show a toast to guide the user
-        toast.success("Please complete the Jira authorization in the popup window.");
-        
-        // Close the integration modal
-        setShowIntegrationModal(false);
-      } else {
-        toast.error("Invalid response from server. Please try again.");
-      }
-    } catch (error) {
-      console.error("Jira integration error:", error);
-      toast.error("Failed to connect to Jira. Please try again.");
-    }
+      }, 1000);
+    })
+    .catch(error => {
+      console.error("Error initiating Jira authentication:", error);
+      toast.error("Error connecting to Jira: " + error.message);
+    });
   };
 
-  // Add this effect to listen for the Jira authentication token
-  useEffect(() => {
-    // Function to handle messages from popup window
-    const handleAuthMessage = (event) => {
-      console.log("Received message from popup:", event.data);
-      
-      // Check if this is a Jira auth message
-      if (event.data && event.data.type === 'jira_auth_success') {
-        // Store the Jira access token
-        const jiraToken = event.data.access_token;
-        console.log("Received Jira token:", jiraToken?.substring(0, 10) + "...");
-        
-        // Save in localStorage
-        localStorage.setItem('jira_authorization', jiraToken);
-        
-        // Show success message
-        toast.success("Successfully connected to Jira!");
-        
-        // You could also update UI state to show Jira is connected
-      }
-    };
+  // Add these functions for GitHub and Azure (placeholders for now)
+  const handleGitHubIntegration = () => {
+    toast.info("GitHub integration coming soon!");
+    setIntegrationTab('github');
+    setShowIntegrationPanel(true);
+  };
+
+  const handleAzureIntegration = () => {
+    toast.info("Azure DevOps integration coming soon!");
+    setIntegrationTab('azure');
+    setShowIntegrationPanel(true);
+  };
+
+  // Handle selecting a conversation
+  const handleSelectConversation = async (conversation: any) => {
+    setActiveConversation(conversation);
+    setShowUploadUI(false);
+  };
+  
+  // Handle new chat button
+  const handleNewChat = () => {
+    setActiveConversation(null);
+    setShowUploadUI(true);
+  };
+  
+  // Add this function to handle Jira disconnect
+  const handleJiraDisconnect = () => {
+    localStorage.removeItem('jira_authorization');
+    toast.success("Disconnected from Jira");
     
-    // Add event listener for messages
-    window.addEventListener('message', handleAuthMessage);
-    
-    // Cleanup on unmount
-    return () => {
-      window.removeEventListener('message', handleAuthMessage);
-    };
-  }, []);
+    // Force refresh of the panel
+    setShowIntegrationPanel(false);
+    setTimeout(() => setShowIntegrationPanel(true), 10);
+  };
 
   return (
     <div className="h-screen overflow-hidden flex flex-col bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e] text-white">
+      {/* Use the modular Sidebar component */}
+      <Sidebar 
+        expanded={sidebarExpanded}
+        toggleExpanded={() => setSidebarExpanded(!sidebarExpanded)}
+        onSelectConversation={handleSelectConversation}
+        onNewChat={handleNewChat}
+        logout={handleLogout}
+        isMobile={isMobile}
+        activeConversationId={activeConversation?.id || null}
+      />
       
-      {/* Integration Button - Fixed position in top right */}
-      <button 
-        onClick={() => setShowIntegrationModal(true)}
-        className="fixed top-4 right-4 z-50 px-4 py-2 rounded-md border border-white/20 bg-white/5 backdrop-blur-sm 
-          hover:bg-white/10 transition-all transform duration-200 hover:translate-y-[-2px] 
-          active:translate-y-[1px] text-white font-medium"
-      >
-        Integration
-      </button>
-      
-      {/* Modal for integrations (initially hidden) */}
-      {showIntegrationModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-[#1a1745] p-6 rounded-lg border border-white/10 w-11/12 max-w-md">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold text-white">Integration Options</h3>
-              <button 
-                onClick={() => setShowIntegrationModal(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              {/* GitHub Integration with inline SVG */}
-              <button className="w-full p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-left flex items-center">
-                <svg className="h-6 w-6 mr-3 text-white" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                  <path fillRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
-                </svg>
-                Connect to GitHub
-              </button>
-              
-              {/* Jira Integration with inline SVG */}
-              <button 
-                onClick={handleJiraIntegration}
-                className="w-full p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-left flex items-center"
-              >
-                <svg className="h-6 w-6 mr-3" viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M249.68 240.026L137.887 128.214l-4.464-4.465h116.257v116.277h-.001zm0 116.278v-116.278l111.793-111.793 4.464-4.464H249.68v116.257z" fill="#2684FF"/>
-                  <path d="M249.68 240.026L137.887 351.838l-4.464 4.465h116.257V240.026zm0-116.277V7.471l-111.793 111.81-4.464 4.475 116.257-.007z" fill="white"/>
-                </svg>
-                Connect to Jira
-              </button>
-              
-              {/* Azure DevOps Integration with inline SVG */}
-              <button className="w-full p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-left flex items-center">
-                <svg className="h-6 w-6 mr-3" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M0 4a4 4 0 014-4h24a4 4 0 014 4v24a4 4 0 01-4 4H4a4 4 0 01-4-4V4z" fill="#0078D7"/>
-                  <path d="M22.7 11.9L25 11l-6.1-2.8v.1l-7.2 8.4l3.2 3.9 7.8-8.7zm-5 13.5l7.9-5.1-2.3-1.2-5.6 6.3zm-13.6-5.7L9 15.8l2.2-2.5-3.4-3.1z" fill="white"/>
-                </svg>
-                Connect to Azure DevOps
-              </button>
-            </div>
+      {/* Rest of your Dashboard component */}
+      <main className={`flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300 ease-in-out
+        ${!isMobile ? (sidebarExpanded ? 'ml-64' : 'ml-16') : 'ml-0'}`}>
+        
+        {/* Mobile menu button - only visible when sidebar is collapsed on mobile */}
+        {isMobile && !sidebarExpanded && (
+          <div className="p-4 flex items-center">
+          <button 
+              onClick={() => setSidebarExpanded(true)}
+              className="p-2 rounded-md hover:bg-white/5"
+          >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+            <h1 className="ml-2 text-xl font-semibold text-white">ProjectAnalyzer</h1>
           </div>
-        </div>
-      )}
-      
-      {/* Header - fixed height */}
-      <header className="flex-shrink-0 relative z-10 backdrop-blur-sm bg-black/10 border-b border-white/10">
-        {/* Existing header content */}
-      </header>
-
-      {/* Sidebar with better collapsed state organization */}
-      <aside className={`fixed inset-y-0 left-0 z-20 transition-all duration-300 transform bg-[#120f2d] border-r border-gray-800 
-        ${sidebarExpanded ? 'w-64' : 'w-16'}`}>
-        <div className="flex flex-col h-full">
-          {sidebarExpanded ? (
-            // EXPANDED SIDEBAR CONTENT
-            <>
-              {/* Logo + brand with smaller, themed text */}
-              <div className="flex-none p-3 border-b border-white/10">
-                <div className="flex items-center">
-                  <div className="h-8 w-8 rounded-md bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center">
-                    <span className="text-sm font-bold text-white">AQ</span>
-            </div>
-                  <span className="ml-3 text-4xl leading-snug font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-300 to-purple-300">
-                    AlignIQ
-                  </span>
-                </div>
-        </div>
-        
-              {/* New Chat and Toggle buttons side by side with standard padding */}
-              <div className="px-3 py-3">
-                <div className="flex items-center space-x-3">
-                  {/* New Chat button - larger */}
-                  <button
-                    onClick={() => {
-                      setShowUploadUI(true);
-                      setActiveConversation(null);
-                    }}
-                    className="flex-1 flex items-center justify-center !py-2 !px-3 bg-gradient-to-r from-blue-600 to-purple-600 
-                      rounded-md text-white font-medium hover:from-blue-500 hover:to-purple-500 transition-all"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
-                    </svg>
-                    New Chat
-                  </button>
-                  
-                  {/* Toggle button - same size as before */}
-          <button 
-                    onClick={toggleSidebar}
-                    className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded hover:bg-white/5 transition-colors !p-0"
-                    title="Collapse sidebar"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-                </div>
-              </div>
-            </>
-          ) : (
-            // COLLAPSED SIDEBAR - Keep the current vertical arrangement
-            <>
-              {/* 1. Logo at the top */}
-              <div className="flex-none p-3 flex justify-center">
-                <div className="h-8 w-8 rounded-md bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center">
-                  <span className="text-sm font-bold text-white">AQ</span>
-                </div>
-              </div>
-              
-              {/* 2. Toggle button in the middle */}
-              <div className="flex-none py-3 flex justify-center">
-          <button 
-                  onClick={toggleSidebar}
-                  className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-white/5 transition-colors !p-0"
-                  title="Expand sidebar"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-              </div>
-        
-              {/* 3. New chat button (just +) at the bottom */}
-              <div className="flex-none py-3 flex justify-center">
-          <button
-            onClick={() => {
-                    setShowUploadUI(true);
-                    setActiveConversation(null);
-                  }}
-                  className="w-10 h-10 flex items-center justify-center bg-gradient-to-r from-blue-600 to-purple-600 
-                    rounded-md text-white font-medium hover:from-blue-500 hover:to-purple-500 transition-all !p-0"
-                  title="New Chat"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
-        </div>
-            </>
-          )}
-          
-          {/* Conversation list - only when expanded */}
-          {sidebarExpanded && (
-            <div className="flex-grow overflow-y-auto">
-              <div className="px-4">
-                <h3 className="text-xs font-medium text-gray-300 mb-2">
-                  Recent conversations
-            </h3>
-                
-                {/* Conversations grouped by time period */}
-                {Object.entries(groupedConversations)
-                  .filter(([_, convs]) => convs.length > 0)
-                  .map(([period, convs]) => (
-                    <div key={period} className="mb-4">
-                      <h4 className="text-xs text-gray-500 mb-1">
-                        {period.charAt(0).toUpperCase() + period.slice(1)}
-                      </h4>
-                      
-                      <div className="space-y-1">
-                        {convs.map(conversation => (
-                          <div key={conversation.chat_history_id} className="relative group">
-                            {renamingConversation === conversation.chat_history_id ? (
-                              /* Render just the form when renaming - no parent button */
-                              <form 
-                                className="w-full text-left flex items-center py-2 px-3 rounded-md bg-white/5"
-                                onSubmit={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  saveNewTitle(conversation.chat_history_id, e);
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-3 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                  </svg>
-                
-                <input
-                                  type="text"
-                                  className="flex-1 bg-gray-800 border border-purple-500/50 rounded px-2 py-1 text-sm text-white"
-                                  value={newTitle}
-                                  onChange={(e) => setNewTitle(e.target.value)}
-                                  autoFocus
-                                  onBlur={() => setRenamingConversation(null)}
-                                />
-                              </form>
-                            ) : (
-                              /* Regular button when not renaming */
-            <button
-                                className={`w-full text-left flex items-center py-2 px-3 rounded-md transition-colors relative
-                                  ${activeConversation?.id === conversation.chat_history_id 
-                                    ? 'bg-white/10 text-white' 
-                                    : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}
-                                onClick={() => selectConversation(conversation.chat_history_id)}
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-                                
-                                <span className="text-sm truncate">
-                                  {conversation.title}
-                                </span>
-                  </button>
         )}
         
-                            {/* Conversation actions - ellipsis menu (don't show during rename) */}
-                            {sidebarExpanded && renamingConversation !== conversation.chat_history_id && (
-                      <button
-                                className={`absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-400 
-                                  hover:bg-white/10 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity
-                                  ${activeDropdown === conversation.chat_history_id ? 'opacity-100 bg-white/10 text-white' : ''}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setActiveDropdown(activeDropdown === conversation.chat_history_id ? null : conversation.chat_history_id);
-                                }}
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                        </svg>
-              </button>
-                  )}
-                  
-                            {/* Dropdown menu */}
-                            {activeDropdown === conversation.chat_history_id && (
-                              <div className="absolute right-0 mt-1 w-48 rounded-md bg-gray-800 shadow-lg border border-white/10 z-10">
-                                <div className="py-1">
-                <button 
-                                    className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/5 flex items-center"
-                                    onClick={(e) => renameConversation(conversation.chat_history_id, e)}
-                                  >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 0L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-                                    Rename
-              </button>
-                <button 
-                                    className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-white/5 flex items-center"
-                                    onClick={(e) => deleteConversation(conversation.chat_history_id, e)}
-                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
-                                    Delete
-                </button>
-                </div>
-              </div>
-            )}
-          </div>
-                        ))}
-        </div>
-      </div>
-                  ))}
-                
-                {/* Show message if no conversations */}
-                {Object.values(groupedConversations).flat().length === 0 && (
-                  <div className="text-center py-4 text-gray-500">
-                    <p>No conversations yet</p>
-                    <p className="text-xs mt-1">Click "New Chat" to get started</p>
-        </div>
-                )}
-                </div>
-                    </div>
-                  )}
-                  
-          {/* Bottom section - Profile menu (always visible) */}
-          <div className="flex-none border-t border-white/10 mt-auto">
-            <div className="p-4">
-              <ProfileMenu user={null} logout={logout} sidebarExpanded={sidebarExpanded} />
-                </div>
-              </div>
-            </div>
-      </aside>
-
-      {/* Main content area with proper positioning and transition */}
-      <main className={`flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300 ease-in-out
-        ${sidebarExpanded ? 'pl-64' : 'pl-16'}`}>
         <div className="flex-1 overflow-y-auto">
           {isLoadingConversation ? (
             // Loading state while fetching conversation details
@@ -1699,28 +1392,28 @@ const Dashboard: React.FC = () => {
                               
                               {/* Export options bar */}
                               <div className="mt-4 pt-2 border-t border-white/10 flex justify-end space-x-2">
-                  <button
+          <button 
                                   onClick={() => handleCopyMessage(msg)}
                                   className="flex items-center text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-white/5 transition-colors !p-0"
-                                >
+          >
                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                                  </svg>
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
                                   Copy
-                  </button>
-                  
-                      <button
+          </button>
+        
+          <button
                                   onClick={() => handleDownloadPDF(msg)}
                                   className="flex items-center text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-white/5 transition-colors !p-0"
                       >
                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 10v6m0 0l-3-3m3 3l3 3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
                                   Download PDF
-                      </button>
-                    </div>
-                </div>
-              </div>
+          </button>
+        </div>
+          </div>
+        </div>
             </div>
           ) : (
                         // User message - keep as is
@@ -1729,20 +1422,20 @@ const Dashboard: React.FC = () => {
                             <div className="h-8 w-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
                               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
                                 <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                    </svg>
+                </svg>
                   </div>
                             <div className="flex-1">
                               <p className="text-white whitespace-pre-wrap">{msg.content}</p>
-                </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+        </div>
+            </div>
+              </div>
+            )}
+          </div>
                   ))}
               <div ref={messagesEndRef} />
-                </div>
-              </div>
-              
+        </div>
+      </div>
+      
               {/* Recommendation panel - collapsible */}
               {recommendation && (
                 <div className="flex-shrink-0 p-4 border-t border-white/10 max-h-[30vh] overflow-y-auto">
@@ -1752,7 +1445,7 @@ const Dashboard: React.FC = () => {
                     <div className="mb-4">
                       <h4 className="text-lg font-semibold mb-2 text-white">Project Summary</h4>
                       <p className="text-gray-200">{recommendation.summary}</p>
-                    </div>
+                </div>
                     
                     {/* Display tech stack recommendations */}
                     {recommendation.tech_stack && recommendation.tech_stack.length > 0 && (
@@ -1767,10 +1460,10 @@ const Dashboard: React.FC = () => {
                               {tech}
                             </span>
                           ))}
-                        </div>
-            </div>
-          )}
-                    
+                      </div>
+                    </div>
+                  )}
+                  
                     {/* Display developer requirements */}
                     {recommendation.developers_required && recommendation.developers_required.length > 0 && (
                       <div className="mb-4">
@@ -1781,7 +1474,7 @@ const Dashboard: React.FC = () => {
                               <div className="flex justify-between">
                                 <span className="font-medium">{dev.role}</span>
                                 <span className="text-purple-300">{dev.count} needed</span>
-        </div>
+                </div>
                               <div className="mt-2 flex flex-wrap gap-1">
                                 {dev.skills.map((skill, idx) => (
                                   <span 
@@ -1868,7 +1561,7 @@ const Dashboard: React.FC = () => {
                     <h2 className="text-lg sm:text-xl font-bold mb-2 text-white">Welcome Back!</h2>
                     <p className="text-gray-200 mb-4 text-sm sm:text-base">Select a conversation from the sidebar to continue where you left off, or upload a new document to start a fresh analysis.</p>
                     <div className="flex flex-col sm:flex-row sm:justify-center space-y-2 sm:space-y-0 sm:space-x-2">
-                      <button 
+          <button 
                         onClick={() => {
                           if (!sidebarExpanded) {
                             setSidebarExpanded(true);
@@ -1877,8 +1570,8 @@ const Dashboard: React.FC = () => {
                         className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg text-white font-medium hover:from-blue-500 hover:to-purple-500 transition-all"
                       >
                         View Conversations
-                      </button>
-                      <button 
+          </button>
+          <button 
                         onClick={() => {
                           setShowUploadUI(true);
                           // Reset any previous upload state
@@ -1892,26 +1585,13 @@ const Dashboard: React.FC = () => {
                         className="px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white font-medium hover:bg-white/20 transition-all"
                       >
                         Upload New Document
-                      </button>
+          </button>
             </div>
           </div>
       </div>
               ) : (
                 // No conversations exist OR showUploadUI is true - show upload UI
                 <div className="max-w-2xl mx-auto w-full">
-                  {Object.values(groupedConversations).flat().length > 0 && (
-                    // Only show back button if user has conversations
-          <button 
-                      onClick={() => setShowUploadUI(false)}
-                      className="flex items-center text-gray-400 hover:text-white mb-4 transition-colors"
-          >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-                      Back to Conversations
-          </button>
-        )}
-
                   {/* Main container with compact fixed layout */}
                   <div className="backdrop-blur-sm bg-white/5 rounded-3xl border border-white/10 p-5 shadow-2xl flex flex-col max-h-[75vh] max-w-xl mx-auto">
                     {/* Section 1: Compact header & drag area */}
@@ -2047,6 +1727,13 @@ const Dashboard: React.FC = () => {
       <div className="fixed bottom-4 right-4 z-50">
         {/* Toast notifications will appear here */}
       </div>
+      {/* Integration panel */}
+      <RightSidebar
+        onJiraConnect={handleJiraIntegration}
+        onGitHubConnect={handleGitHubIntegration}
+        onAzureConnect={handleAzureIntegration}
+        jiraToken={localStorage.getItem('jira_authorization')}
+      />
     </div>
   );
 };

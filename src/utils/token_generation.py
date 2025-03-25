@@ -72,7 +72,8 @@ def get_current_user(token: HTTPAuthorizationCredentials = Security(security)):
 async def token_validator(request: Request,token: HTTPAuthorizationCredentials = Security(security)):
 
     
-    
+    logger.info(f"request headers: {request.headers}")
+    logger.info(f"token: {token}")
     jira_token = request.headers.get('Jira_Authorization')
     
     if jira_token:
