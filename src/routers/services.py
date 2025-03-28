@@ -133,75 +133,79 @@ async def process_document_task(file_path: str, user_id: str, document_id: str, 
 async def upload_file(
     background_tasks: BackgroundTasks,
     current_token: dict = Depends(token_validator), 
-    file: UploadFile = File(...), 
+    file: list[UploadFile] = File(...), 
     db: Session = Depends(get_db)
 ):
-    file_content = b''
-    try:
-        while chunk := await file.read(1024*1024):
-            file_content += chunk
+    entire_doc_details = []
+    for content_document in file:
+        file_content = b''
+        try:
+            while chunk := await content_document.read(1024*1024):
+                file_content += chunk
             logger.info(f"reading the file content")
-        if len(file_content) > eval(settings.FILE_SIZE):
-            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File size exceed 10MB limit")
-        logger.info("complete the file size check and reading < 50 MB")
+            if len(file_content) > eval(settings.FILE_SIZE):
+                raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File size exceed 10MB limit")
+            logger.info("complete the file size check and reading < 50 MB")
 
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"file processing failed: {str(e)}")
-    
-    if not file_content:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty")
-    logger.info(f"completed reading the file")
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"file processing failed: {str(e)}")
+        
+        if not file_content:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty")
+        logger.info(f"completed reading the file")
 
-    file_path = os.path.join(UPLOADS_DIR, file.filename)
-    try:
-        with open(file_path, "wb") as f:
-            f.write(file_content)
-            logger.info(f"completed saving the file")
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"failed to save the file: {str(e)}")
-    try:
-        logger.info(f"data from dependency with 2 tokens: {current_token}")
-        user_doc = {
-            "user_id": current_token["regular_login_token"]["id"],
-            "document_path": file_path
-        }
-        logger.info(f"user doc dict: {user_doc}")
-        response = await user_documents(doc_data=user_doc, db=db)
-        logger.info(f"completed the document upload")
+        file_path = os.path.join(UPLOADS_DIR, content_document.filename)
+        try:
+            with open(file_path, "wb") as f:
+                f.write(file_content)
+                logger.info(f"completed saving the file")
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"failed to save the file: {str(e)}")
+        try:
+            logger.info(f"data from dependency with 2 tokens: {current_token}")
+            user_doc = {
+                "user_id": current_token["regular_login_token"]["id"],
+                "document_path": file_path
+            }
+            logger.info(f"user doc dict: {user_doc}")
+            response = await user_documents(doc_data=user_doc, db=db)
+            logger.info(f"completed the document upload")
+            
+            # # Create a unique task ID
+            # task_id = str(uuid.uuid4())
+            
+            # # Initialize task status
+            # task_status[task_id] = {
+            #     "status": "pending",
+            #     "current_step": 0,
+            #     "step_progress": 0,
+            #     "message": "Starting document processing"
+            # }
+            
+            # # Start background processing
+            # background_tasks.add_task(
+            #     process_document_task,
+            #     file_path=response["document_path"],
+            #     user_id=response["user_id"],
+            #     document_id=response["document_id"],
+            #     task_id=task_id
+            # )
+            
+            # return {"message": "Document upload successful", "task_id": task_id}
+            document_data = await ExtractText(document_path=response["document_path"],user_id=response["user_id"],document_id=response["document_id"]).parse_document()
+            entire_doc_details.append(document_data)
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error occured please try again {str(e)}")
+    logger.info(f"entire_doc_details: {entire_doc_details}")
         
-        # # Create a unique task ID
-        # task_id = str(uuid.uuid4())
-        
-        # # Initialize task status
-        # task_status[task_id] = {
-        #     "status": "pending",
-        #     "current_step": 0,
-        #     "step_progress": 0,
-        #     "message": "Starting document processing"
-        # }
-        
-        # # Start background processing
-        # background_tasks.add_task(
-        #     process_document_task,
-        #     file_path=response["document_path"],
-        #     user_id=response["user_id"],
-        #     document_id=response["document_id"],
-        #     task_id=task_id
-        # )
-        
-        # return {"message": "Document upload successful", "task_id": task_id}
-        
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error occured please try again {str(e)}")
-    print("near document extract")
-    document_data = await ExtractText(document_path=response["document_path"],user_id=response["user_id"],document_id=response["document_id"]).parse_document()
     full_data = []
-    for i in range(len(document_data)):
-        full_data.append(document_data[i]["data"])
-    raw_requirements =  "\n".join(
-                        str(item["data"]) if isinstance(item, dict) else str(item) for item in full_data
-                                )
-    
+    for content_data in entire_doc_details:
+        for i in range(len(content_data)):
+            full_data.append(document_data[i]["data"]) 
+        raw_requirements =  "\n".join(
+                            str(item["data"]) if isinstance(item, dict) else str(item) for item in full_data
+                                    )
+        
     # Agent for analyzing and providing the response in PDF
     agent = ProjectScopingAgent()
     

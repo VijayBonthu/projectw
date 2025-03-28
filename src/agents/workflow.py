@@ -12,6 +12,7 @@ from config import settings
 import base64
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
 from typing import List
+from utils.logger import logger
 
 llm = ChatOpenAI(temperature=1, api_key=settings.OPENAI_CHATGPT, model="gpt-4o-mini")
 # llm_vision = ChatOpenAI(temperature=1, api_key=settings.OPENAI_CHATGPT, model="gpt-4-vision-preview")
@@ -392,6 +393,7 @@ class ProjectScopingAgent:
 
         # Send request to GPT-4 Vision
         response = llm.invoke(message)
+        logger.info(f"response from summarize_image: {response}")
             
         return response.content
     

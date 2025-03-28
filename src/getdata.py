@@ -75,7 +75,7 @@ class ExtractText:
                                     image_path = os.path.join("uploads_images", f"{self.document_id}_{self.user_id}_image_{image_count}.png")
                                     with open(image_path, "wb") as f:
                                         f.write(image_bytes)
-                                    content.append({"type": "image", "data": image_path, "content":ProjectScopingAgent.summarize_image(image_path)})
+                                    content.append({"type": "image", "data": image_path, "content": await ProjectScopingAgent.summarize_image(image_path)})
 
                         # Check for floating images (anchored)
                         anchor = elem.find('.//' + qn('wp:anchor'))
@@ -90,7 +90,7 @@ class ExtractText:
                                     image_path = os.path.join("uploads_images", f"{self.document_id}_{self.user_id}_image_{image_count}.png")
                                     with open(image_path, "wb") as f:
                                         f.write(image_bytes)
-                                    content.append({"type": "image", "data": image_path, "content":ProjectScopingAgent.summarize_image(image_path)})
+                                    content.append({"type": "image", "data": image_path, "content": await ProjectScopingAgent.summarize_image(image_path)})
 
             # Process tables
             elif isinstance(block, docx.table.Table):
@@ -159,7 +159,8 @@ class ExtractText:
                     image_path = os.path.join("uploads_images", f"{self.document_id}_{self.user_id}_pdf_image_{page_num+1}_{img_index+1}.{image_ext}")
                     with open(image_path, "wb") as f:
                         f.write(image_bytes)
-                    content.append({"type": "image", "data": image_path, "content": ProjectScopingAgent.summarize_image(image_path)})
+                    content.append({"type": "image", "data": image_path, "content": await ProjectScopingAgent.summarize_image(image_path)})
+        logger.info(f"content from extracted pdf inside process_pdf_with_structure: {content[:10]}")
 
         # Process tables with Camelot using a temporary file
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
@@ -219,7 +220,7 @@ class ExtractText:
                     image_path = os.path.join("uploads_images", f"{self.document_id}_{self.user_id}_pptx_image_{slide_num+1}_{image_count+1}.{image_ext}")
                     with open(image_path, "wb") as f:
                         f.write(image_bytes)
-                    content.append({"type": "image", "data": image_path, "content":ProjectScopingAgent.summarize_image(image_path)})
+                    content.append({"type": "image", "data": image_path, "content": await ProjectScopingAgent.summarize_image(image_path)})
                     image_count += 1
 
                 # Extract tables
