@@ -27,6 +27,8 @@ interface Conversation {
   created_at: string;
   messages: Message[];
   document_id: string;
+  chat_history_id: string;
+  modified_at: string;
 }
 
 interface Recommendation {
@@ -95,7 +97,7 @@ const Dashboard: React.FC = () => {
   const [integrationTab, setIntegrationTab] = useState<'jira' | 'github' | 'azure'>('jira');
   const [isSplitView, setIsSplitView] = useState(false);
   const [selectedJiraIssue, setSelectedJiraIssue] = useState<string | null>(null);
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
   // Check authentication on component mount
   useEffect(() => {
@@ -152,11 +154,11 @@ const Dashboard: React.FC = () => {
   const fetchConversations = async () => {
     try {
       // Get the token for authentication
-    const token = localStorage.getItem('token') || 
+      const token = localStorage.getItem('token') || 
                   localStorage.getItem('regular_token') || 
                   localStorage.getItem('google_auth_token');
-    
-    if (!token) {
+      
+      if (!token) {
         console.error("No token found");
         return;
       }
@@ -168,6 +170,8 @@ const Dashboard: React.FC = () => {
         }
       });
       
+      console.log("Fetched conversations data:", response.data);
+      
       if (response.data && response.data.user_details) {
         // Sort conversations by modified_at descending (newest first)
         const sortedConversations = [...response.data.user_details].sort((a, b) => 
@@ -176,19 +180,24 @@ const Dashboard: React.FC = () => {
         
         // Group conversations by date
         const grouped = groupConversationsByDate(sortedConversations);
+        
+        // Update state with the new conversations
         setGroupedConversations(grouped);
         
-        // Update the old conversations array for the collapsed sidebar
-        // Only show the 5 most recent conversations in collapsed view
+        // Also update the old conversations array for the collapsed sidebar
         const conversationsArray = sortedConversations.slice(0, 5).map(conv => ({
           id: conv.chat_history_id,
           title: conv.title,
           created_at: conv.modified_at,
           messages: [],
-          document_id: conv.document_id || ''
+          document_id: conv.document_id || '',
+          chat_history_id: conv.chat_history_id,
+          modified_at: conv.modified_at
         }));
         
         setConversations(conversationsArray);
+        
+        console.log("Updated conversation states");
       }
     } catch (error) {
       console.error('Error fetching conversations:', error);
@@ -387,35 +396,22 @@ const Dashboard: React.FC = () => {
       const documentId = uploadResponse.data.document_id;
       const chatTitle = uploadResponse.data.title || `Analysis of ${files[0].name}`;
       
-      // Create a message from the upload response
+      // Create initial assistant message using the actual API response message
       const initialMessage: Message = {
-        role: "assistant", // Upload response is from assistant/system
-        content: uploadResponse.data.message || "Documents processed successfully",
+        role: 'assistant',
+        content: uploadResponse.data.message, // Use the actual message from the API
         timestamp: new Date().toISOString()
       };
       
-      // Save the initial conversation to the database
-      const saveResponse = await axios.post(`${API_URL}/chat`, 
-        { 
-          user_id: userId,
-          document_id: documentId,
-          message: [initialMessage], // Just the initial message from upload
-          title: chatTitle
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        }
-      );
-      
-      // Create a properly structured conversation
+      // Create a new conversation with the document info from the API response
       const newConversation: Conversation = {
-        id: saveResponse.data.id || saveResponse.data.chat_history_id,
+        id: documentId || 'new_' + Date.now(),
         title: chatTitle,
         created_at: new Date().toISOString(),
         messages: [initialMessage],
-        document_id: documentId
+        document_id: documentId || '',
+        chat_history_id: documentId || 'new_' + Date.now(),
+        modified_at: new Date().toISOString()
       };
       
       setActiveConversation(newConversation);
@@ -501,7 +497,9 @@ const Dashboard: React.FC = () => {
           title: details.title,
           created_at: details.modified_at,
           messages: messages,
-          document_id: details.document_id || ''
+          document_id: details.document_id || '',
+          chat_history_id: details.chat_history_id,
+          modified_at: details.modified_at
         };
         
         setActiveConversation(conversation);
@@ -521,13 +519,13 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // Update handleSendMessage function to call the correct endpoint with proper payload structure
+  // Update handleSendMessage function to mark new messages and responses as selected by default
   const handleSendMessage = async () => {
-    if (!message.trim() || isSendingMessage) return;
+    if (!message.trim() || isSendingMessage || !activeConversation) return;
+    
+    setIsSendingMessage(true);
     
     try {
-      setIsSendingMessage(true);
-      
       // Get authentication tokens
       const token = localStorage.getItem('token') || 
                     localStorage.getItem('regular_token') || 
@@ -540,23 +538,21 @@ const Dashboard: React.FC = () => {
       }
       
       // Create a temporary message for immediate UI update
+      const tempMsgId = `temp-${Date.now()}`;
       const tempMsg: Message = {
-        id: `temp-${Date.now()}`,
+        id: tempMsgId,
         role: 'user',
         content: message,
         timestamp: new Date().toISOString()
       };
       
+      // Add the new user message ID to selected messages
+      setSelectedMessageIds(prev => [...prev, tempMsgId]);
+      
       // Make a copy of the active conversation with the new message
-      const updatedConversation = activeConversation ? {
+      const updatedConversation = {
         ...activeConversation,
         messages: [...activeConversation.messages, tempMsg]
-      } : {
-        id: 'new_' + Date.now(),
-        title: 'New Conversation',
-        created_at: new Date().toISOString(),
-        document_id: '',
-        messages: [tempMsg]
       };
       
       // Update UI immediately
@@ -580,13 +576,13 @@ const Dashboard: React.FC = () => {
       });
       
       // Prepare selected messages for context (or all messages if none selected)
-      const contextMessages = activeConversation?.messages
+      const contextMessages = activeConversation.messages
         .filter(msg => !selectedMessageIds.length || (msg.id && selectedMessageIds.includes(msg.id)))
         .map(msg => ({
           role: msg.role,
           content: msg.content,
           timestamp: msg.timestamp
-        })) || [];
+        }));
       
       // Add the new user message to the context
       const userMessageForApi = {
@@ -595,7 +591,7 @@ const Dashboard: React.FC = () => {
         timestamp: new Date().toISOString()
       };
       
-      // Call the chat-with-doc endpoint with the CORRECT payload format
+      // STEP 1: Call the chat-with-doc endpoint with SELECTED context messages
       const response = await axios.post(
         `${API_URL}/chat-with-doc`,
         {
@@ -616,12 +612,16 @@ const Dashboard: React.FC = () => {
       // Process the response
       if (response.data) {
         // Create assistant message from the response
+        const assistantMsgId = `assistant-${Date.now()}`;
         const assistantMessage: Message = {
-          id: `assistant-${Date.now()}`,
+          id: assistantMsgId,
           role: 'assistant',
           content: response.data.message || "No response from the server",
           timestamp: new Date().toISOString()
         };
+        
+        // Add the assistant response ID to selected messages
+        setSelectedMessageIds(prev => [...prev, assistantMsgId]);
         
         // Update conversation with the final message
         const finalMessages = updatedConversation.messages
@@ -633,15 +633,21 @@ const Dashboard: React.FC = () => {
           messages: finalMessages
         });
         
-        // Save the updated conversation to the database
+        // STEP 2: Save the updated conversation to the /chat endpoint with ALL messages
+        // Clean messages for API (remove IDs)
+        const cleanMessages = finalMessages.map(msg => ({
+          role: msg.role,
+          content: msg.content,
+          timestamp: msg.timestamp
+        }));
+        
         await axios.post(
           `${API_URL}/chat`,
           {
-            chat_history_id: updatedConversation.id,
             user_id: userId,
             document_id: updatedConversation.document_id || '',
-            message: finalMessages,
-            title: updatedConversation.title
+            message: cleanMessages, // Send ALL messages in the correct format
+            title: updatedConversation.title || 'Chat Session'
           },
           {
             headers: {
@@ -652,6 +658,11 @@ const Dashboard: React.FC = () => {
         
         // Refresh conversation list
         fetchConversations();
+        
+        // Scroll to bottom
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
       }
     } catch (error) {
       console.error('Error sending message:', error);
@@ -1309,26 +1320,39 @@ const Dashboard: React.FC = () => {
     setSelectedJiraIssue(null);
   };
 
-  // Add this to handle processing uploaded files
-  const handleProcessFile = async () => {
-    if (!uploadedFile) return;
+  // Update the handleProcessFiles function to explicitly support multiple files
+  const handleProcessFiles = async () => {
+    if (uploadedFiles.length === 0) {
+      toast.error('Please upload at least one file');
+      return;
+    }
     
     setIsProcessing(true);
     
     try {
+      // Create a FormData object to send files
       const formData = new FormData();
-      formData.append('file', uploadedFile);
       
-      // Get the token - try all possible token stores
+      // Append each file with the field name 'file'
+      uploadedFiles.forEach(file => {
+        formData.append('file', file);
+      });
+      
+      // Get the token for authentication
       const token = localStorage.getItem('token') || 
-                   localStorage.getItem('regular_token') || 
-                   localStorage.getItem('google_auth_token');
-                   
+                    localStorage.getItem('regular_token') || 
+                    localStorage.getItem('google_auth_token');
+                  
       if (!token) {
-        throw new Error('Authentication required');
+        toast.error('Authentication token not found. Please log in again.');
+        setIsProcessing(false);
+        return;
       }
       
-      // Upload the file to the backend
+      // Log what we're sending to the backend
+      console.log('Sending files to backend:', uploadedFiles.map(f => f.name));
+      
+      // Call the backend API to process the files
       const response = await axios.post(`${API_URL}/upload`, formData, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -1336,25 +1360,89 @@ const Dashboard: React.FC = () => {
         }
       });
       
-      // If successful, create a new conversation
+      console.log("Upload response:", response.data);
+      
+      // Handle successful response
       if (response.data) {
-        toast.success('Document processed successfully!');
+        toast.success(`${uploadedFiles.length} file(s) processed successfully`);
         
-        // Create a new conversation with the document info
-        const newConversation = {
-          id: response.data.chat_history_id || 'new_' + Date.now(),
-          title: uploadedFile.name,
-          document_id: response.data.document_id,
+        // Get document_id from the response
+        const documentId = response.data.document_id;
+        
+        // Get user ID from localStorage
+        const userId = localStorage.getItem('user_id');
+        
+        // Step 2: Save the message to the chat system with the correct payload format
+        const chatResponse = await axios.post(`${API_URL}/chat`, {
+          user_id: userId,
+          document_id: documentId,
+          message: [
+            {
+              role: 'assistant',
+              content: response.data.message,
+              timestamp: new Date().toISOString()
+            }
+          ], // Only include role, content, timestamp - no IDs
+          title: response.data.title || `Document Analysis`
+        }, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        console.log("Chat creation response:", chatResponse.data);
+        
+        // Step 3: Create a new conversation with the chat response data
+        const newConversation: Conversation = {
+          id: chatResponse.data.id || documentId,
+          title: response.data.title || (uploadedFiles.length > 1 
+            ? `${uploadedFiles.length} Documents` 
+            : uploadedFiles[0].name),
+          document_id: documentId,
           created_at: new Date().toISOString(),
-          messages: response.data.messages || []
+          messages: [
+            {
+              role: 'assistant',
+              content: response.data.message,
+              timestamp: new Date().toISOString()
+            }
+          ],
+          chat_history_id: chatResponse.data.chat_history_id || documentId,
+          modified_at: new Date().toISOString()
         };
         
+        // Set the active conversation state to trigger the UI update
         setActiveConversation(newConversation);
+        
+        // Switch to chat interface
         setShowUploadUI(false);
+        
+        // Clear the uploaded files
+        setUploadedFiles([]);
+        
+        // Use the new function to ensure sidebar is updated
+        await refreshSidebar();
+        
+        // Scroll to the bottom of the chat
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
       }
     } catch (error) {
-      console.error('Error processing document:', error);
-      toast.error('Failed to process document. Please try again.');
+      console.error('Error processing documents:', error);
+      
+      if (axios.isAxiosError(error) && error.response) {
+        const errorDetail = error.response.data?.detail;
+        console.log('Error detail:', errorDetail);
+        
+        if (error.response.status === 401) {
+          toast.error('Your session has expired. Please log in again.');
+        } else {
+          toast.error(`Failed to process documents: ${error.response.data?.message || error.response.data?.detail || 'Unknown error'}`);
+        }
+      } else {
+        toast.error('Failed to process documents. Please try again.');
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -1367,6 +1455,21 @@ const Dashboard: React.FC = () => {
       setShowIntegrationPanel(false);
     }
   }, [isSplitView, selectedJiraIssue]);
+
+  // Add this function to force a refresh of the sidebar after document upload
+  const refreshSidebar = async () => {
+    try {
+      await fetchConversations();
+      
+      // Force a render by making a small state change
+      setSidebarExpanded(prev => {
+        setTimeout(() => setSidebarExpanded(prev), 50);
+        return !prev;
+      });
+    } catch (error) {
+      console.error('Error refreshing sidebar:', error);
+    }
+  };
 
   return (
     <div className="h-screen overflow-hidden flex flex-col bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e] text-white">
@@ -1565,30 +1668,51 @@ const Dashboard: React.FC = () => {
                       <p className="text-gray-300">Upload project requirements, specifications, or any documents you need to analyze</p>
                     </div>
                     
-                    {uploadedFile ? (
+                    {uploadedFiles.length > 0 ? (
                       <div className="mb-6">
-                        <div className="flex items-center p-4 bg-white/5 rounded-lg border border-white/10">
-                          <div className="mr-4 bg-indigo-600 rounded-md p-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                          </div>
-                          <div className="flex-1 truncate">
-                            <p className="text-sm font-medium text-white truncate">{uploadedFile.name}</p>
-                            <p className="text-xs text-gray-400">{(uploadedFile.size / 1024).toFixed(2)} KB</p>
-                          </div>
+                        <div className="mb-3 flex items-center justify-between">
+                          <h3 className="text-white font-medium">Selected Files ({uploadedFiles.length})</h3>
                           <button 
-                            onClick={() => setUploadedFile(null)}
-                            className="ml-4 text-gray-400 hover:text-white"
+                            onClick={() => setUploadedFiles([])}
+                            className="text-sm text-gray-400 hover:text-white flex items-center"
                           >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
+                            Clear All
                           </button>
                         </div>
                         
+                        <div className="max-h-40 overflow-y-auto pr-1 border border-white/10 rounded-lg">
+                          {uploadedFiles.map((file, index) => (
+                            <div key={index} className="flex items-center p-3 bg-white/5 border-b border-white/10 last:border-b-0">
+                              <div className="mr-3 bg-indigo-600 rounded-md p-1.5 flex-shrink-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                              </div>
+                              <div className="flex-1 truncate">
+                                <p className="text-sm font-medium text-white truncate">{file.name}</p>
+                                <p className="text-xs text-gray-400">{(file.size / 1024).toFixed(2)} KB</p>
+                              </div>
+                              <button 
+                                onClick={() => {
+                                  const newFiles = [...uploadedFiles];
+                                  newFiles.splice(index, 1);
+                                  setUploadedFiles(newFiles);
+                                }}
+                                className="ml-2 text-gray-400 hover:text-white flex-shrink-0"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        
                         <button
-                          onClick={handleProcessFile}
+                          onClick={handleProcessFiles}
                           disabled={isProcessing}
                           className="w-full mt-4 py-3 px-4 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600
                             border border-purple-500/30 shadow-md transform transition-all duration-200 
@@ -1609,7 +1733,7 @@ const Dashboard: React.FC = () => {
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                                 </svg>
-                                Process Document
+                                Process Documents
                               </>
                             )}
                           </span>
@@ -1626,7 +1750,7 @@ const Dashboard: React.FC = () => {
                           e.preventDefault();
                           e.stopPropagation();
                           if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                            setUploadedFile(e.dataTransfer.files[0]);
+                            setUploadedFiles(Array.from(e.dataTransfer.files));
                           }
                         }}
                         onClick={() => document.getElementById('fileInput')?.click()}
@@ -1637,44 +1761,20 @@ const Dashboard: React.FC = () => {
                           className="hidden"
                           onChange={(e) => {
                             if (e.target.files && e.target.files.length > 0) {
-                              setUploadedFile(e.target.files[0]);
+                              setUploadedFiles(Array.from(e.target.files));
                             }
                           }}
                           accept=".pdf,.doc,.docx,.txt,.md"
+                          multiple
                         />
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                         </svg>
-                        <p className="text-lg font-medium text-white mb-1">Drag and drop your file here</p>
+                        <p className="text-lg font-medium text-white mb-1">Drag and drop your files here</p>
                         <p className="text-sm text-gray-400 mb-4">or click to browse files</p>
                         <p className="text-xs text-gray-500">Supported formats: PDF, DOC, DOCX, TXT, MD</p>
                       </div>
                     )}
-                  </div>
-                  
-                  <div className="mt-8 text-center">
-                    <h3 className="text-xl font-medium text-white mb-4">Or start a new conversation</h3>
-                    <button
-                      onClick={() => {
-                        // Create a new empty conversation
-                        const newConversation = {
-                          id: 'new_' + Date.now(),
-                          title: 'New Chat',
-                          created_at: new Date().toISOString(),
-                          messages: []
-                        };
-                        setActiveConversation(newConversation);
-                        setShowUploadUI(false);
-                      }}
-                      className="py-3 px-6 rounded-lg bg-white/10 border border-white/20 text-white font-medium hover:bg-white/15 transition-colors"
-                    >
-                      <span className="flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                        </svg>
-                        Start New Chat
-                      </span>
-                    </button>
                   </div>
                 </div>
               </div>
