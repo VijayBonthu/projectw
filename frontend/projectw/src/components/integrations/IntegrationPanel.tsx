@@ -11,6 +11,7 @@ interface IntegrationPanelProps {
   onJiraConnect: () => void;
   onJiraDisconnect: () => void;
   initialActiveTab?: TabType;
+  onViewJiraIssue?: (issueId: string) => void;
 }
 
 const IntegrationPanel: React.FC<IntegrationPanelProps> = ({
@@ -19,7 +20,8 @@ const IntegrationPanel: React.FC<IntegrationPanelProps> = ({
   jiraToken,
   onJiraConnect,
   onJiraDisconnect,
-  initialActiveTab = 'jira'
+  initialActiveTab = 'jira',
+  onViewJiraIssue
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>(initialActiveTab);
   
@@ -59,6 +61,8 @@ const IntegrationPanel: React.FC<IntegrationPanelProps> = ({
             isConnected={!!jiraToken}
             onConnect={onJiraConnect}
             onDisconnect={onJiraDisconnect}
+            onViewIssue={onViewJiraIssue}
+            onPanelClose={onToggle}
           />
         )}
         {activeTab === 'github' && (

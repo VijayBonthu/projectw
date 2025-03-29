@@ -67,8 +67,6 @@ class Integrations:
         
         # Base URLs
         base_url = f'https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3'
-        
-        base_url = f'https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3'
     
         # Prepare JQL query
         jql = 'attachments IS NOT EMPTY'
@@ -156,6 +154,40 @@ class Integrations:
                     print(f"Error downloading {filename}: {e}")
         
         return downloaded_files
+    
+    def get_single_issues_(self, issue_key:str):
+
+        try:
+            user_resource_details = self.resources
+            user_id = user_resource_details[0]["id"]
+            jira_domain = self.resources[0]["url"]# Return parsed JSON instead of raw response
+            JIRA_API_URL = f"https://api.atlassian.com/ex/jira/{user_id}/rest/api/3"   
+            headers = self.headers
+
+            logger.info(f"inside get single issues: {JIRA_API_URL, issue_key}")
+
+            if issue_key:
+                jql = f'issue={issue_key}'
+
+            search_params = {
+            'jql': jql,
+            "fields": "key,summary,description,attachment, comment, status",
+            'maxResults': 50
+        }
+
+            response  = requests.get(f"{JIRA_API_URL}/issue/{issue_key}", headers=headers, params=search_params)
+            logger.info(f"response inside get single issues: {response.json()}")
+            
+            if response.status_code == 200:
+                return response.json()  # Parse JSON response
+            elif response.status_code == 401:
+                raise HTTPException(status_code=401, detail="Invalid details")
+            else:
+                raise HTTPException(status_code=500, detail="Internal server error")
+        except HTTPException as e:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 

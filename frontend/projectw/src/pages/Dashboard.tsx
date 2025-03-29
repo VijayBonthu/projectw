@@ -9,6 +9,7 @@ import jsPDF from 'jspdf';
 // Import the modular Sidebar
 import { Sidebar } from '../components/sidebar';
 import RightSidebar from '../components/integrations/RightSidebar';
+import JiraIssueDetail from '../components/integrations/jira/JiraIssueDetail';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -84,7 +85,7 @@ const Dashboard: React.FC = () => {
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [renamingConversation, setRenamingConversation] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
-  const [showUploadUI, setShowUploadUI] = useState(false);
+  const [showUploadUI, setShowUploadUI] = useState(true);
   // Near the top of the Dashboard component - add new state for selected messages
   const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
   // First, add this state near your other state declarations
@@ -92,6 +93,9 @@ const Dashboard: React.FC = () => {
   const [showIntegrationPanel, setShowIntegrationPanel] = useState(false);
   const [integrationDropdownOpen, setIntegrationDropdownOpen] = useState(false);
   const [integrationTab, setIntegrationTab] = useState<'jira' | 'github' | 'azure'>('jira');
+  const [isSplitView, setIsSplitView] = useState(false);
+  const [selectedJiraIssue, setSelectedJiraIssue] = useState<string | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   // Check authentication on component mount
   useEffect(() => {
@@ -119,17 +123,30 @@ const Dashboard: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Modified scrollToBottom function for better scroll behavior
+  // First, improve the scrollToBottom function to be more reliable
   const scrollToBottom = () => {
     if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      // Use setTimeout to ensure this happens after DOM updates
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
     }
   };
 
-  // Scroll to bottom when new messages arrive or conversation changes
+  // Make sure we're also scrolling when typing indicators appear
   useEffect(() => {
-    scrollToBottom();
+    // This will trigger scrolling whenever messages change, including typing indicators
+    if (activeConversation?.messages?.some(msg => msg.content === '...')) {
+      scrollToBottom();
+    }
   }, [activeConversation?.messages]);
+
+  // Add this as well to ensure scrolling happens after state updates
+  useEffect(() => {
+    if (isSendingMessage) {
+      scrollToBottom();
+    }
+  }, [isSendingMessage]);
 
   // Fetch user's conversations with full content
   const fetchConversations = async () => {
@@ -504,76 +521,49 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // Update handleSendMessage function to ensure proper API payload formatting
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
+  // Update handleSendMessage function to call the correct endpoint with proper payload structure
+  const handleSendMessage = async () => {
     if (!message.trim() || isSendingMessage) return;
-
+    
     try {
       setIsSendingMessage(true);
       
+      // Get authentication tokens
       const token = localStorage.getItem('token') || 
                     localStorage.getItem('regular_token') || 
                     localStorage.getItem('google_auth_token');
       const userId = localStorage.getItem('user_id');
       
       if (!token || !userId) {
-        setError("Authentication token or user ID not found. Please log in again.");
+        toast.error("Authentication token or user ID not found. Please log in again.");
         return;
       }
       
-      // Get the current conversation ID
-      const chatId = activeConversation?.id;
-      const documentId = activeConversation?.document_id;
-      const conversationTitle = activeConversation?.title || 'Conversation';
-      
-      // Filter messages to only include selected messages for context
-      // Remove any temporary IDs before sending to the backend
-      const selectedContextMessages = activeConversation?.messages
-        .filter(msg => msg.id && selectedMessageIds.includes(msg.id))
-        .map(msg => ({
-          role: msg.role,
-          content: msg.content,
-          timestamp: msg.timestamp
-        })) || [];
-      
-      // Create a new message object for the user's message with a temporary ID for UI only
-      const tempId = `temp-id-${Date.now()}`;
-      const newUserMessage: Message = {
-        id: tempId,
+      // Create a temporary message for immediate UI update
+      const tempMsg: Message = {
+        id: `temp-${Date.now()}`,
         role: 'user',
         content: message,
         timestamp: new Date().toISOString()
       };
       
-      // Add new message to selected messages for the UI
-      setSelectedMessageIds(prev => [...prev, tempId]);
-      
-      // Create the user message for the API without the temporary ID
-      const userMessageForApi = {
-      role: 'user',
-        content: message,
-        timestamp: new Date().toISOString()
+      // Make a copy of the active conversation with the new message
+      const updatedConversation = activeConversation ? {
+        ...activeConversation,
+        messages: [...activeConversation.messages, tempMsg]
+      } : {
+        id: 'new_' + Date.now(),
+        title: 'New Conversation',
+        created_at: new Date().toISOString(),
+        document_id: '',
+        messages: [tempMsg]
       };
       
-      // Keep the full conversation history for UI and database
-      const allMessages = activeConversation 
-        ? [...activeConversation.messages, newUserMessage] 
-        : [newUserMessage];
-      
-      // Update UI immediately with user message
-      if (activeConversation) {
-        setActiveConversation({
-          ...activeConversation,
-          messages: allMessages
-        });
-      }
-      
-      // Clear the input
+      // Update UI immediately
+      setActiveConversation(updatedConversation);
       setMessage('');
       
-      // Create a placeholder for assistant's response
+      // Add a placeholder for the assistant's response
       const assistantPlaceholder: Message = {
         role: 'assistant',
         content: '...',
@@ -581,26 +571,39 @@ const Dashboard: React.FC = () => {
       };
       
       // Show typing indicator
-      if (activeConversation) {
-        setActiveConversation(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            messages: [...allMessages, assistantPlaceholder]
-          };
-        });
-      }
+      setActiveConversation(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          messages: [...prev.messages, assistantPlaceholder]
+        };
+      });
       
-      // Send request to chat-with-doc with the CORRECT FORMAT matching the Pydantic model
+      // Prepare selected messages for context (or all messages if none selected)
+      const contextMessages = activeConversation?.messages
+        .filter(msg => !selectedMessageIds.length || (msg.id && selectedMessageIds.includes(msg.id)))
+        .map(msg => ({
+          role: msg.role,
+          content: msg.content,
+          timestamp: msg.timestamp
+        })) || [];
+      
+      // Add the new user message to the context
+      const userMessageForApi = {
+        role: 'user',
+        content: message,
+        timestamp: new Date().toISOString()
+      };
+      
+      // Call the chat-with-doc endpoint with the CORRECT payload format
       const response = await axios.post(
         `${API_URL}/chat-with-doc`,
         {
-          chat_history_id: chatId,
+          chat_history_id: updatedConversation.id,
           user_id: userId,
-          document_id: documentId,
-          // Include selected messages + the new user message
-          message: [...selectedContextMessages, userMessageForApi],
-          title: conversationTitle
+          document_id: updatedConversation.document_id || '',
+          message: [...contextMessages, userMessageForApi],
+          title: updatedConversation.title
         },
         {
           headers: {
@@ -610,41 +613,39 @@ const Dashboard: React.FC = () => {
         }
       );
       
-      // Process the response and update conversation
-      const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: response.data.message || "Resources are currently busy. Please try again later.",
-        timestamp: new Date().toISOString()
-      };
-      
-      // Add assistant message to selected messages 
-      setSelectedMessageIds(prev => [...prev, assistantMessage.id as string]);
-      
-      // Final conversation with ALL messages for UI and storage
-      const finalMessages = [...allMessages, assistantMessage];
-      
-      // Update UI with final conversation
-      if (activeConversation) {
+      // Process the response
+      if (response.data) {
+        // Create assistant message from the response
+        const assistantMessage: Message = {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: response.data.message || "No response from the server",
+          timestamp: new Date().toISOString()
+        };
+        
+        // Update conversation with the final message
+        const finalMessages = updatedConversation.messages
+          .filter(msg => msg.role !== 'assistant' || msg.content !== '...') // Remove placeholder
+          .concat([assistantMessage]);
+        
         setActiveConversation({
-          ...activeConversation,
+          ...updatedConversation,
           messages: finalMessages
         });
         
-        // Save ALL messages to database
+        // Save the updated conversation to the database
         await axios.post(
           `${API_URL}/chat`,
           {
-            chat_history_id: chatId,
+            chat_history_id: updatedConversation.id,
             user_id: userId,
-            document_id: documentId,
-            message: finalMessages, // ALL messages for storage
-            title: conversationTitle
+            document_id: updatedConversation.document_id || '',
+            message: finalMessages,
+            title: updatedConversation.title
           },
           {
             headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
+              'Authorization': `Bearer ${token}`
             }
           }
         );
@@ -654,18 +655,16 @@ const Dashboard: React.FC = () => {
       }
     } catch (error) {
       console.error('Error sending message:', error);
-      setError('Failed to send message. Please try again.');
+      toast.error('Failed to send message');
       
-      // Revert the conversation on error
-      if (activeConversation) {
-        setActiveConversation(prev => {
-          if (!prev) return null;
-          return {
-        ...prev,
-            messages: prev.messages.filter(msg => msg.content !== '...')
-          };
-        });
-      }
+      // Remove loading indicator on error
+      setActiveConversation(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          messages: prev.messages.filter(msg => msg.content !== '...')
+        };
+      });
     } finally {
       setIsSendingMessage(false);
     }
@@ -1296,6 +1295,79 @@ const Dashboard: React.FC = () => {
     setTimeout(() => setShowIntegrationPanel(true), 10);
   };
 
+  // Add a function to handle viewing a Jira issue
+  const handleViewJiraIssue = (issueId: string) => {
+    console.log("Viewing Jira issue:", issueId);
+    setSelectedJiraIssue(issueId);
+    setIsSplitView(true);
+    setShowIntegrationPanel(false);
+  };
+
+  // Add a function to close the split view
+  const handleCloseSplitView = () => {
+    setIsSplitView(false);
+    setSelectedJiraIssue(null);
+  };
+
+  // Add this to handle processing uploaded files
+  const handleProcessFile = async () => {
+    if (!uploadedFile) return;
+    
+    setIsProcessing(true);
+    
+    try {
+      const formData = new FormData();
+      formData.append('file', uploadedFile);
+      
+      // Get the token - try all possible token stores
+      const token = localStorage.getItem('token') || 
+                   localStorage.getItem('regular_token') || 
+                   localStorage.getItem('google_auth_token');
+                   
+      if (!token) {
+        throw new Error('Authentication required');
+      }
+      
+      // Upload the file to the backend
+      const response = await axios.post(`${API_URL}/upload`, formData, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      
+      // If successful, create a new conversation
+      if (response.data) {
+        toast.success('Document processed successfully!');
+        
+        // Create a new conversation with the document info
+        const newConversation = {
+          id: response.data.chat_history_id || 'new_' + Date.now(),
+          title: uploadedFile.name,
+          document_id: response.data.document_id,
+          created_at: new Date().toISOString(),
+          messages: response.data.messages || []
+        };
+        
+        setActiveConversation(newConversation);
+        setShowUploadUI(false);
+      }
+    } catch (error) {
+      console.error('Error processing document:', error);
+      toast.error('Failed to process document. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Add/update a useEffect to ensure the integration panel closes when split view is activated
+  useEffect(() => {
+    // When split view is activated, ensure the integration panel is closed
+    if (isSplitView && selectedJiraIssue) {
+      setShowIntegrationPanel(false);
+    }
+  }, [isSplitView, selectedJiraIssue]);
+
   return (
     <div className="h-screen overflow-hidden flex flex-col bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e] text-white">
       {/* Use the modular Sidebar component */}
@@ -1310,419 +1382,325 @@ const Dashboard: React.FC = () => {
       />
       
       {/* Rest of your Dashboard component */}
-      <main className={`flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300 ease-in-out
-        ${!isMobile ? (sidebarExpanded ? 'ml-64' : 'ml-16') : 'ml-0'}`}>
+      <main 
+        className={`flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300 ease-in-out
+          ${!isMobile ? (sidebarExpanded ? 'ml-64' : 'ml-16') : (sidebarExpanded ? 'ml-64' : 'ml-0')}`}
+        style={{ 
+          position: 'relative',
+          width: `calc(100% - ${sidebarExpanded ? '16rem' : isMobile ? '0' : '4rem'})`,
+          marginLeft: `${sidebarExpanded ? '16rem' : isMobile ? '0' : '4rem'}`
+        }}
+      >
+        {/* Sidebar section */}
+        <div className="flex-none relative w-auto">
+          <Sidebar 
+            expanded={sidebarExpanded}
+            toggleExpanded={toggleSidebar}
+            onSelectConversation={handleSelectConversation}
+            onNewChat={handleNewChat}
+            logout={handleLogout}
+            isMobile={isMobile}
+            activeConversationId={activeConversation?.id || null}
+          />
+        </div>
         
-        {/* Mobile menu button - only visible when sidebar is collapsed on mobile */}
-        {isMobile && !sidebarExpanded && (
-          <div className="p-4 flex items-center">
-          <button 
-              onClick={() => setSidebarExpanded(true)}
-              className="p-2 rounded-md hover:bg-white/5"
-          >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-            <h1 className="ml-2 text-xl font-semibold text-white">ProjectAnalyzer</h1>
-          </div>
-        )}
-        
-        <div className="flex-1 overflow-y-auto">
-          {isLoadingConversation ? (
-            // Loading state while fetching conversation details
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center">
-                <svg className="animate-spin h-10 w-10 mx-auto mb-4 text-purple-500" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                <p className="text-gray-400">Loading conversation...</p>
-                </div>
-                </div>
-          ) : activeConversation ? (
-            // Chat interface with sticky header for title
-            <div className="flex flex-col h-full">
-              {/* Sticky conversation header */}
-              <div className="sticky top-0 z-10 p-4 border-b border-white/10 backdrop-blur-sm bg-[#141332]/90">
-                <h2 className="text-xl font-semibold text-white">{activeConversation.title}</h2>
-              </div>
-              
-              {/* Messages area */}
-              <div className="flex-1 overflow-y-auto" style={{ height: recommendation ? 'calc(100% - 165px)' : 'calc(100% - 73px)' }}>
-                {/* Select All checkbox header */}
-                <div className="sticky top-0 z-10 p-3 bg-[#141332]/90 border-b border-white/10 flex items-center">
-                  <label className="flex items-center space-x-2 text-sm text-gray-300">
-                    <input 
-                      type="checkbox" 
-                      checked={allMessagesSelected} 
-                      onChange={toggleAllMessages}
-                      className="form-checkbox h-4 w-4 rounded text-purple-500"
-                    />
-                    <span>Include all messages as context</span>
-                  </label>
+        {/* Main content area with horizontal split view */}
+        <div className="flex flex-1 h-full">
+          {/* Main content area - take full width on mobile */}
+          <div className={`${isSplitView && !isMobile ? 'w-1/2' : 'w-full'} h-full flex flex-col overflow-hidden`}>
+            {activeConversation ? (
+              // Chat window
+              <div className="flex-1 flex flex-col h-full overflow-hidden">
+                {/* Chat header */}
+                <div className="flex-none p-4 border-b border-white/10 flex justify-between items-center bg-indigo-950/50">
+                  <h2 className="text-xl font-semibold text-white">{activeConversation.title}</h2>
                 </div>
                 
-                <div className="p-4 space-y-6">
-                  {/* Inside the message rendering section - looking for both user and AI messages */}
-                  {activeConversation && activeConversation.messages.map((msg, index) => (
-                    <div key={msg.id || index} className={`mb-4 flex items-start ${msg.role === 'user' ? 'mr-12' : 'ml-12'}`}>
-                      {/* Checkbox for message selection */}
-                      <div className="mr-2 mt-2">
-                        <input 
-                          type="checkbox"
-                          checked={msg.id ? debugSelectionState(msg.id) : false}
-                          onChange={() => msg.id && toggleMessageSelection(msg.id)}
-                          className="form-checkbox h-4 w-4 rounded text-purple-500 cursor-pointer"
-                        />
-                      </div>
-                      
-                      {msg.role === 'assistant' ? (
-                        // AI message with export options
-                        <div className="flex-1 flex flex-col space-y-2 bg-[#1a1745] rounded-lg p-4 max-w-3xl">
-                          <div className="flex items-start space-x-3">
-                            <div className="h-8 w-8 rounded-md bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center flex-shrink-0">
-                              <span className="text-sm font-bold text-white">AI</span>
-                            </div>
-                            <div className="flex-1 overflow-x-auto">
-                              <div className="prose text-gray-100 max-w-none">
-                                {/* Render markdown content */}
-                                <div dangerouslySetInnerHTML={{ __html: marked.parse(msg.content) }} />
-                              </div>
-                              
-                              {/* Export options bar */}
-                              <div className="mt-4 pt-2 border-t border-white/10 flex justify-end space-x-2">
-          <button 
-                                  onClick={() => handleCopyMessage(msg)}
-                                  className="flex items-center text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-white/5 transition-colors !p-0"
-          >
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-                                  Copy
-          </button>
-        
-          <button
-                                  onClick={() => handleDownloadPDF(msg)}
-                                  className="flex items-center text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-white/5 transition-colors !p-0"
-                      >
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 10v6m0 0l-3-3m3 3l3 3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-                                  Download PDF
-          </button>
-        </div>
-          </div>
-        </div>
-            </div>
-          ) : (
-                        // User message - keep as is
-                        <div className="flex-1 flex flex-col space-y-2 bg-[#232142] rounded-lg p-4">
-                          <div className="flex items-start space-x-3">
-                            <div className="h-8 w-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                </svg>
+                {/* Chat messages */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {/* Select All checkbox header */}
+                  <div className="sticky top-0 z-10 p-3 bg-[#141332]/90 border-b border-white/10 flex items-center">
+                    <label className="flex items-center space-x-2 text-sm text-gray-300">
+                      <input 
+                        type="checkbox" 
+                        checked={allMessagesSelected} 
+                        onChange={toggleAllMessages}
+                        className="form-checkbox h-4 w-4 rounded text-purple-500"
+                      />
+                      <span>Include all messages as context</span>
+                    </label>
                   </div>
-                            <div className="flex-1">
-                              <p className="text-white whitespace-pre-wrap">{msg.content}</p>
-        </div>
-            </div>
+                  
+                  <div className="p-4 space-y-6">
+                    {/* Inside the message rendering section - looking for both user and AI messages */}
+                    {activeConversation && activeConversation.messages.map((msg, index) => (
+                      <div key={msg.id || index} className={`mb-4 flex items-start ${msg.role === 'user' ? 'mr-12' : 'ml-12'}`}>
+                        {/* Checkbox for message selection */}
+                        <div className="mr-2 mt-2">
+                          <input 
+                            type="checkbox"
+                            checked={msg.id ? debugSelectionState(msg.id) : false}
+                            onChange={() => msg.id && toggleMessageSelection(msg.id)}
+                            className="form-checkbox h-4 w-4 rounded text-purple-500 cursor-pointer"
+                          />
+                        </div>
+                        
+                        {msg.role === 'assistant' ? (
+                          // AI message with export options
+                          <div className="flex-1 flex flex-col space-y-2 bg-[#1a1745] rounded-lg p-4 max-w-3xl overflow-hidden">
+                            <div className="flex items-start space-x-3">
+                              <div className="h-8 w-8 rounded-md bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center flex-shrink-0">
+                                <span className="text-sm font-bold text-white">AI</span>
+                              </div>
+                              <div className="flex-1 min-w-0 overflow-hidden">
+                                <div className="prose text-gray-100 max-w-none overflow-hidden break-words whitespace-pre-wrap">
+                                  {/* Render markdown content */}
+                                  <div dangerouslySetInnerHTML={{ __html: marked.parse(msg.content) }} className="overflow-hidden" />
+                                </div>
+                                
+                                {/* Export options bar */}
+                                <div className="mt-4 pt-2 border-t border-white/10 flex justify-end space-x-2">
+                                  <button 
+                                    onClick={() => handleCopyMessage(msg)}
+                                    className="flex items-center text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-white/5 transition-colors !p-0"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    Copy
+                                  </button>
+                                
+                                  <button
+                                    onClick={() => handleDownloadPDF(msg)}
+                                    className="flex items-center text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-white/5 transition-colors !p-0"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 10v6m0 0l-3-3m3 3l3 3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    Download PDF
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          // User message
+                          <div className="flex-1 bg-[#2b2a63] rounded-lg p-4 max-w-3xl overflow-hidden">
+                            <div className="flex items-start space-x-3">
+                              <div className="h-8 w-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                              <div className="flex-1 min-w-0 overflow-hidden">
+                                <p className="text-white whitespace-pre-wrap break-words overflow-hidden">{msg.content}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {/* This empty div is crucial for scrolling */}
+                    <div ref={messagesEndRef} className="h-px w-full" />
+                  </div>
+                </div>
+                {/* Chat input - only shown when conversation is active and not in upload mode */}
+                {activeConversation && !showUploadUI && (
+                  <div className="flex-none p-4 border-t border-white/10 bg-indigo-950/50">
+                    <div className="relative">
+                      <textarea
+                        value={message}
+                        onChange={handleMessageChange}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSendMessage();
+                          }
+                        }}
+                        placeholder="Type your message here..."
+                        className="w-full px-4 py-3 pr-16 bg-white/5 border border-white/10 rounded-lg text-white 
+                          placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-purple-500
+                          min-h-[50px] max-h-[96px] overflow-y-auto resize-none"
+                        style={{ height: 'auto', lineHeight: '1.5' }}
+                        rows={1}
+                        ref={textareaRef}
+                      />
+                      <button
+                        onClick={handleSendMessage}
+                        disabled={!message.trim() || isSendingMessage}
+                        className="absolute right-5 bottom-2.5 p-1.5
+                          bg-gradient-to-r from-blue-600 to-purple-600 rounded-full
+                          border border-purple-500/30 shadow-md text-white
+                          hover:from-blue-500 hover:to-purple-500 focus:outline-none
+                          disabled:opacity-50 disabled:cursor-not-allowed
+                          transition-all duration-200"
+                      >
+                        {isSendingMessage ? (
+                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              // Upload UI
+              <div className="flex-1 flex flex-col overflow-y-auto bg-indigo-950">
+                <div className="max-w-3xl mx-auto w-full py-12 px-4">
+                  <div className="text-center mb-8">
+                    <h1 className="text-3xl font-bold text-white mb-2">Upload Your Document</h1>
+                    <p className="text-lg text-gray-300">Upload a project document to analyze requirements, and get AI assistance</p>
+                  </div>
+                  
+                  <div className="bg-indigo-900/40 border border-white/10 rounded-xl p-8 backdrop-blur-sm">
+                    <div className="mb-6">
+                      <h2 className="text-xl font-semibold text-white mb-2">Document Upload</h2>
+                      <p className="text-gray-300">Upload project requirements, specifications, or any documents you need to analyze</p>
+                    </div>
+                    
+                    {uploadedFile ? (
+                      <div className="mb-6">
+                        <div className="flex items-center p-4 bg-white/5 rounded-lg border border-white/10">
+                          <div className="mr-4 bg-indigo-600 rounded-md p-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </div>
+                          <div className="flex-1 truncate">
+                            <p className="text-sm font-medium text-white truncate">{uploadedFile.name}</p>
+                            <p className="text-xs text-gray-400">{(uploadedFile.size / 1024).toFixed(2)} KB</p>
+                          </div>
+                          <button 
+                            onClick={() => setUploadedFile(null)}
+                            className="ml-4 text-gray-400 hover:text-white"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                        
+                        <button
+                          onClick={handleProcessFile}
+                          disabled={isProcessing}
+                          className="w-full mt-4 py-3 px-4 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600
+                            border border-purple-500/30 shadow-md transform transition-all duration-200 
+                            hover:translate-y-[-2px] hover:shadow-lg hover:shadow-purple-500/30 
+                            hover:from-blue-500 hover:to-purple-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <span className="relative z-10 flex items-center justify-center text-white font-semibold">
+                            {isProcessing ? (
+                              <>
+                                <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Processing...
+                              </>
+                            ) : (
+                              <>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                                </svg>
+                                Process Document
+                              </>
+                            )}
+                          </span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div 
+                        className="border-2 border-dashed border-white/20 rounded-lg p-12 text-center cursor-pointer hover:border-purple-400/50 transition-colors"
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                            setUploadedFile(e.dataTransfer.files[0]);
+                          }
+                        }}
+                        onClick={() => document.getElementById('fileInput')?.click()}
+                      >
+                        <input
+                          id="fileInput"
+                          type="file"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files.length > 0) {
+                              setUploadedFile(e.target.files[0]);
+                            }
+                          }}
+                          accept=".pdf,.doc,.docx,.txt,.md"
+                        />
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <p className="text-lg font-medium text-white mb-1">Drag and drop your file here</p>
+                        <p className="text-sm text-gray-400 mb-4">or click to browse files</p>
+                        <p className="text-xs text-gray-500">Supported formats: PDF, DOC, DOCX, TXT, MD</p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="mt-8 text-center">
+                    <h3 className="text-xl font-medium text-white mb-4">Or start a new conversation</h3>
+                    <button
+                      onClick={() => {
+                        // Create a new empty conversation
+                        const newConversation = {
+                          id: 'new_' + Date.now(),
+                          title: 'New Chat',
+                          created_at: new Date().toISOString(),
+                          messages: []
+                        };
+                        setActiveConversation(newConversation);
+                        setShowUploadUI(false);
+                      }}
+                      className="py-3 px-6 rounded-lg bg-white/10 border border-white/20 text-white font-medium hover:bg-white/15 transition-colors"
+                    >
+                      <span className="flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                        </svg>
+                        Start New Chat
+                      </span>
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
-                  ))}
-              <div ref={messagesEndRef} />
-        </div>
-      </div>
-      
-              {/* Recommendation panel - collapsible */}
-              {recommendation && (
-                <div className="flex-shrink-0 p-4 border-t border-white/10 max-h-[30vh] overflow-y-auto">
-                  <div className="p-4 bg-white/5 border border-white/10 rounded-xl">
-                    <h3 className="text-xl font-bold mb-4 text-purple-200">AI Analysis</h3>
-                    
-                    <div className="mb-4">
-                      <h4 className="text-lg font-semibold mb-2 text-white">Project Summary</h4>
-                      <p className="text-gray-200">{recommendation.summary}</p>
-                </div>
-                    
-                    {/* Display tech stack recommendations */}
-                    {recommendation.tech_stack && recommendation.tech_stack.length > 0 && (
-                      <div className="mb-4">
-                        <h4 className="text-lg font-semibold mb-2">Recommended Tech Stack</h4>
-                        <div className="flex flex-wrap gap-2">
-                          {recommendation.tech_stack.map((tech, index) => (
-                            <span 
-                    key={index}
-                              className="px-3 py-1 bg-blue-500/20 border border-blue-500/30 rounded-full text-sm"
-                            >
-                              {tech}
-                            </span>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-                  
-                    {/* Display developer requirements */}
-                    {recommendation.developers_required && recommendation.developers_required.length > 0 && (
-                      <div className="mb-4">
-                        <h4 className="text-lg font-semibold mb-2">Team Requirements</h4>
-                        <div className="space-y-3">
-                          {recommendation.developers_required.map((dev, index) => (
-                            <div key={index} className="p-3 bg-white/5 border border-white/10 rounded-lg">
-                              <div className="flex justify-between">
-                                <span className="font-medium">{dev.role}</span>
-                                <span className="text-purple-300">{dev.count} needed</span>
-                </div>
-                              <div className="mt-2 flex flex-wrap gap-1">
-                                {dev.skills.map((skill, idx) => (
-                                  <span 
-                                    key={idx} 
-                                    className="px-2 py-1 bg-purple-500/20 border border-purple-500/30 rounded-full text-xs"
-                                  >
-                                    {skill}
-                                  </span>
-                                ))}
-                      </div>
-                    </div>
-                          ))}
-                  </div>
-                      </div>
-                    )}
-                    
-                    {/* Display ambiguities */}
-                    {recommendation.ambiguities && recommendation.ambiguities.length > 0 && (
-                      <div>
-                        <h4 className="text-lg font-semibold mb-2">Identified Ambiguities</h4>
-                        <ul className="list-disc list-inside space-y-1 text-gray-300">
-                          {recommendation.ambiguities.map((item, index) => (
-                            <li key={index}>{item}</li>
-                          ))}
-                        </ul>
-            </div>
-          )}
-        </div>
-                </div>
-              )}
-              
-              {/* Message input - fixed height at bottom */}
-              <div className="flex-shrink-0 border-t border-white/10 backdrop-blur-sm bg-black/30 p-4 w-full">
-                <form onSubmit={handleSendMessage} className="flex space-x-2">
-                  <textarea
-                    value={message}
-                    onChange={handleMessageChange}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage(e);
-                      }
-                    }}
-                    placeholder="Ask a follow-up question..."
-                    className="flex-1 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white 
-                      placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500
-                      min-h-[44px] max-h-[200px] overflow-y-auto resize-none"
-                    style={{ height: 'auto' }}
-                    rows={1}
-                    ref={textareaRef}
-                  />
-                <button
-                    type="submit"
-                    disabled={!message.trim() || isSendingMessage}
-                    className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg 
-                      border border-purple-500/30 shadow-md text-white font-medium
-                      hover:from-blue-500 hover:to-purple-500 focus:outline-none
-                      disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isSendingMessage ? (
-                      <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
-                    </svg>
-                  )}
-                </button>
-                </form>
-              </div>
-                </div>
-          ) : (
-            // Welcome screen with two possible states
-            <div className="flex-1 flex flex-col items-center justify-center p-4">
-              {Object.values(groupedConversations).flat().length > 0 && !showUploadUI ? (
-                // Some conversations exist but none selected - Welcome Back screen
-                <div className={`text-center mx-auto ${sidebarExpanded && isMobile ? 'ml-16 max-w-[calc(100%-4rem)]' : 'max-w-md'}`}>
-                  <div className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-4 sm:p-6 rounded-xl border border-white/10 backdrop-blur-sm">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-3 sm:mb-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                    </svg>
-                    <h2 className="text-lg sm:text-xl font-bold mb-2 text-white">Welcome Back!</h2>
-                    <p className="text-gray-200 mb-4 text-sm sm:text-base">Select a conversation from the sidebar to continue where you left off, or upload a new document to start a fresh analysis.</p>
-                    <div className="flex flex-col sm:flex-row sm:justify-center space-y-2 sm:space-y-0 sm:space-x-2">
-          <button 
-                        onClick={() => {
-                          if (!sidebarExpanded) {
-                            setSidebarExpanded(true);
-                          }
-                        }}
-                        className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg text-white font-medium hover:from-blue-500 hover:to-purple-500 transition-all"
-                      >
-                        View Conversations
-          </button>
-          <button 
-                        onClick={() => {
-                          setShowUploadUI(true);
-                          // Reset any previous upload state
-                          setFiles([]);
-                          setTotalProgress(0);
-                          setError('');
-                          if (fileInputRef.current) {
-                            fileInputRef.current.value = '';
-                          }
-                        }}
-                        className="px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white font-medium hover:bg-white/20 transition-all"
-                      >
-                        Upload New Document
-          </button>
-            </div>
-          </div>
-      </div>
-              ) : (
-                // No conversations exist OR showUploadUI is true - show upload UI
-                <div className="max-w-2xl mx-auto w-full">
-                  {/* Main container with compact fixed layout */}
-                  <div className="backdrop-blur-sm bg-white/5 rounded-3xl border border-white/10 p-5 shadow-2xl flex flex-col max-h-[75vh] max-w-xl mx-auto">
-                    {/* Section 1: Compact header & drag area */}
-                    <div className="flex-none">
-                      <div className="text-center mb-4">
-                        <h2 className="text-2xl font-bold mb-1 bg-clip-text text-transparent bg-gradient-to-r from-blue-300 via-purple-300 to-pink-300">
-                          Upload Requirements Documents
-                        </h2>
-                        <p className="text-sm text-gray-200">
-                          Upload your client's requirements documents to get AI-powered analysis and recommendations
-                        </p>
-                      </div>
-                      
-                      {error && (
-                        <div className="mb-3 p-2 bg-red-500/20 border border-red-500/30 rounded-md text-white text-sm">
-                          {error}
-                        </div>
-                      )}
-                      
-                      <div className="mb-3">
-                        <label 
-                          htmlFor="file-upload" 
-                          className="block w-full cursor-pointer rounded-lg border-2 border-dashed border-white/30 p-4 text-center hover:border-purple-500/50 transition-colors"
-                          onDragOver={handleDragOver}
-                          onDrop={handleDrop}
-                        >
-                          <div className="flex flex-col items-center justify-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-            </svg>
-                            <span className="text-base font-medium text-gray-300">
-                              Click to upload or drag and drop
-                            </span>
-                            <span className="text-xs text-gray-400 mt-1">
-                              PDF, PPT, CSV, or TXT (max 10MB each)
-                            </span>
-                          </div>
-                          <input 
-                            id="file-upload" 
-                            name="file-upload" 
-                            type="file" 
-                            className="hidden"
-                            ref={fileInputRef}
-                            onChange={handleFileChange}
-                            accept=".pdf,.ppt,.pptx,.csv,.txt,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/csv,text/plain"
-                            multiple
-                          />
-                        </label>
-                      </div>
-                    </div>
-                    
-                    {/* Section 2: File list area - more compact */}
-                    <div className="flex-grow overflow-hidden flex flex-col min-h-0">
-                      {files.length > 0 && (
-                        <div className="mb-3 flex flex-col min-h-0">
-                          <div className="flex justify-between items-center mb-1 flex-shrink-0">
-                            <h3 className="text-xs font-medium text-gray-300">Selected files ({files.length})</h3>
-          <button
-                              onClick={() => setFiles([])}
-                              className="text-xs text-red-400 hover:text-red-300 flex items-center"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-                              Delete All
-          </button>
-              </div>
-                          <div className="overflow-y-auto flex-grow bg-white/5 rounded-lg border border-white/10 min-h-[120px]">
-                            {files.map((file, index) => (
-                              <div key={`${file.name}-${index}`} className="p-2 border-b border-white/10 flex justify-between items-center">
-                                <div className="flex items-center flex-1 min-w-0">
-                                  <FileIcon type={file.type} />
-                                  <div className="ml-2 flex-1 min-w-0">
-                                    <p className="text-sm text-white truncate">{file.name}</p>
-                                    <p className="text-xs text-gray-400">{formatFileSize(file.size)}</p>
-            </div>
-                                </div>
-                                <button onClick={() => removeFile(index)} className="text-gray-400 hover:text-red-400 ml-2">
-                                  <TrashIcon />
-          </button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-        </div>
-        
-                    {/* Section 3: Action buttons */}
-                    <div className="flex-none mt-3 flex justify-center">
-            <button
-                        onClick={handleUpload}
-                        disabled={files.length === 0 || isUploading || isProcessing}
-                        className="py-2 px-6 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600
-                        border border-purple-500/30 shadow-md transition-all
-                        hover:from-blue-500 hover:to-purple-500 focus:outline-none disabled:opacity-50"
-                      >
-                        <span className="flex items-center justify-center text-white font-medium">
-                          {isUploading ? (
-                            <>
-                              <svg className="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-                              Uploading...
-                            </>
-                          ) : isProcessing ? (
-                            <>
-                              <svg className="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-                              Analyzing Documents...
-                            </>
-                          ) : (
-                            <>
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-                              Upload & Analyze
-                            </>
-                          )}
-                        </span>
-            </button>
-          </div>
-        </div>
-      </div>
-              )}
+          
+          {/* Right panel - Jira issue detail (only visible in split view AND on desktop) */}
+          {isSplitView && selectedJiraIssue && !isMobile && (
+            <div className="w-1/2 border-l border-white/10 overflow-auto bg-indigo-950/80">
+              <JiraIssueDetail 
+                issueId={selectedJiraIssue} 
+                onClose={handleCloseSplitView} 
+              />
             </div>
           )}
         </div>
       </main>
+      {/* For mobile devices, we'll show a modal instead of split view */}
+      {isSplitView && selectedJiraIssue && isMobile && (
+        <div className="fixed inset-0 z-50 bg-indigo-950/90 overflow-auto">
+          <JiraIssueDetail 
+            issueId={selectedJiraIssue} 
+            onClose={handleCloseSplitView} 
+          />
+        </div>
+      )}
       {/* Add Toast Container at the bottom of your return statement */}
       <div className="fixed bottom-4 right-4 z-50">
         {/* Toast notifications will appear here */}
@@ -1733,6 +1711,10 @@ const Dashboard: React.FC = () => {
         onGitHubConnect={handleGitHubIntegration}
         onAzureConnect={handleAzureIntegration}
         jiraToken={localStorage.getItem('jira_authorization')}
+        onViewJiraIssue={handleViewJiraIssue}
+        isVisible={showIntegrationPanel}
+        onTogglePanel={setShowIntegrationPanel}
+        isSplitView={isSplitView}
       />
     </div>
   );

@@ -90,7 +90,7 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({ user, logout, sidebarExpanded
         
         {sidebarExpanded && (
           <>
-            <div className="flex-1 text-left">
+            <div className="flex-1 text-left truncate">
               <p className="text-sm font-medium text-gray-100">{userName}</p>
               <p className="text-xs text-gray-400 truncate">{userEmail}</p>
             </div>

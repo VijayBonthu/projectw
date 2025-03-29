@@ -2,27 +2,44 @@ import React, { useState, useEffect } from 'react';
 import IntegrationPanel from './IntegrationPanel';
 import { toast } from 'react-hot-toast';
 import axios from 'axios';
+import JiraTab from './jira/JiraTab';
 
 interface RightSidebarProps {
   onJiraConnect: () => void;
   onGitHubConnect: () => void;
   onAzureConnect: () => void;
   jiraToken: string | null;
+  onViewJiraIssue?: (issueId: string) => void;
+  isVisible?: boolean;
+  onTogglePanel?: (visible: boolean) => void;
+  isSplitView?: boolean;
 }
 
 const RightSidebar: React.FC<RightSidebarProps> = ({
   onJiraConnect,
   onGitHubConnect,
   onAzureConnect,
-  jiraToken
+  jiraToken,
+  onViewJiraIssue,
+  isVisible = false,
+  onTogglePanel,
+  isSplitView = false
 }) => {
-  const [showPanel, setShowPanel] = useState(false);
+  const [showPanel, setShowPanel] = useState(isVisible);
   const [activeTab, setActiveTab] = useState<'jira' | 'github' | 'azure'>('jira');
   // Add a local state to track Jira connection
   const [isJiraConnected, setIsJiraConnected] = useState(!!jiraToken);
   
+  useEffect(() => {
+    setShowPanel(isVisible);
+  }, [isVisible]);
+
   const togglePanel = () => {
-    setShowPanel(!showPanel);
+    const newState = !showPanel;
+    setShowPanel(newState);
+    if (onTogglePanel) {
+      onTogglePanel(newState);
+    }
   };
 
   const handleJiraDisconnect = () => {
@@ -73,15 +90,18 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
   return (
     <>
-      {/* Only show the button when panel is NOT visible */}
-      {!showPanel && (
-        <div className="fixed top-4 right-4 z-40">
+      {/* Show the button when: 
+          1. Panel is NOT visible
+          2. Split view is NOT active (we get this from isVisible prop being passed from Dashboard) */}
+      {!showPanel && (!isSplitView) && (
+        <div className="fixed top-4 right-8 z-40">
           <button
             onClick={togglePanel}
-            className="flex items-center justify-center w-10 h-10 rounded-lg bg-gradient-to-r from-blue-500/40 to-purple-500/40 shadow-lg hover:from-blue-500/60 hover:to-purple-500/60 transition-all"
+            className="flex items-center justify-center w-10 h-10 rounded-lg bg-gradient-to-r from-blue-500/40 to-purple-500/40 shadow-lg hover:from-blue-500/60 hover:to-purple-500/60 transition-all overflow-visible !p-0"
+            style={{ padding: 0 }}
             title="Integrations"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" style={{ display: 'block' }}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
             </svg>
             {isJiraConnected && (
@@ -100,6 +120,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           onJiraConnect={onJiraConnect}
           onJiraDisconnect={handleJiraDisconnect}
           initialActiveTab={activeTab}
+          onViewJiraIssue={onViewJiraIssue}
         />
       )}
     </>

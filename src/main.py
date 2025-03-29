@@ -40,7 +40,7 @@ app.include_router(third_party_integrations.router, prefix="/api/v1", tags=["thi
 
 @app.get("/")
 async def home():
-    return "Welcome to Oauth testing login page" 
+    return "Welcome to Oauth testing login page"  
 
     
 if __name__ == "__main__":

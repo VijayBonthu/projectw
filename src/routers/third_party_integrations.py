@@ -31,4 +31,13 @@ async def download_jira_attachements(issue_key:str = None, current_user = Depend
     issues = Integrations(current_user['jira_token']['jira_access_token']).download_jira_attachments(issue_key=issue_key, download_file_name=download_file_name, attachment_id=attachment_id)
     return {"issues": issues}
 
-
+@router.get('/jira/get_single_issue/{issue_key}')
+async def get_single_issue(issue_key:str = None, current_user = Depends(token_validator)):
+    print(f"current_user_details {current_user}")
+    print(issue_key)
+    if not current_user['jira_token']:
+        raise HTTPException(status_code=401, detail="Jira authorization header is required")
+    if not issue_key:
+        raise HTTPException(status_code=400, detail="issue key is required")
+    issues = Integrations(current_user['jira_token']['jira_access_token']).get_single_issues_(issue_key=issue_key)  
+    return {"issues": issues}
