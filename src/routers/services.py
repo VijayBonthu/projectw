@@ -154,7 +154,13 @@ async def upload_file(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty")
         logger.info(f"completed reading the file")
 
-        file_path = os.path.join(UPLOADS_DIR, content_document.filename)
+        file_uuid = str(uuid.uuid4())
+        file_extension = content_document.filename.split(".")[-1]
+        document_name = content_document.filename.split(".")[0]
+        os.makedirs(f"{UPLOADS_DIR}/{current_token['regular_login_token']['id']}", exist_ok=True) 
+        
+
+        file_path = os.path.join(f"{UPLOADS_DIR}/{current_token['regular_login_token']['id']}", f"{document_name}_{file_uuid}.{file_extension}")
         try:
             with open(file_path, "wb") as f:
                 f.write(file_content)
@@ -162,7 +168,6 @@ async def upload_file(
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"failed to save the file: {str(e)}")
         try:
-            logger.info(f"data from dependency with 2 tokens: {current_token}")
             user_doc = {
                 "user_id": current_token["regular_login_token"]["id"],
                 "document_path": file_path
@@ -170,28 +175,6 @@ async def upload_file(
             logger.info(f"user doc dict: {user_doc}")
             response = await user_documents(doc_data=user_doc, db=db)
             logger.info(f"completed the document upload")
-            
-            # # Create a unique task ID
-            # task_id = str(uuid.uuid4())
-            
-            # # Initialize task status
-            # task_status[task_id] = {
-            #     "status": "pending",
-            #     "current_step": 0,
-            #     "step_progress": 0,
-            #     "message": "Starting document processing"
-            # }
-            
-            # # Start background processing
-            # background_tasks.add_task(
-            #     process_document_task,
-            #     file_path=response["document_path"],
-            #     user_id=response["user_id"],
-            #     document_id=response["document_id"],
-            #     task_id=task_id
-            # )
-            
-            # return {"message": "Document upload successful", "task_id": task_id}
             document_data = await ExtractText(document_path=response["document_path"],user_id=response["user_id"],document_id=response["document_id"]).parse_document()
             entire_doc_details.append(document_data)
         except Exception as e:
@@ -205,32 +188,22 @@ async def upload_file(
         raw_requirements =  "\n".join(
                             str(item["data"]) if isinstance(item, dict) else str(item) for item in full_data
                                     )
-        
+    # return {"message": raw_requirements, "document_id": response["document_id"], "title":" dummy title for now"}
     # Agent for analyzing and providing the response in PDF
     agent = ProjectScopingAgent()
     
     # Sample data must include the correct structure
     sample_data = {
-        "input": {
-            raw_requirements
-        }
+        "document": raw_requirements
     }
     try:
-        requirements = agent.analyze_input(sample_data["input"])
-        ambiguities = agent.identify_ambiguities()
-        tech_stack = agent.generate_tech_recommendations()
-    # sample_data = {
-    #     agent.generate_pdf_report("project_scoping_report.pdf")
-        return {"message": "request completed", "document_id": response["document_id"], "title":" dummy title for now"}
+        requirements, title = await agent.analyze_input(sample_data)
+        
+        
+
+        return {"message": requirements, "document_id": response["document_id"], "title":title}
     except Exception as e:
         return {"Critical Error":{str(e)}}
-    
-    #     }
-    # }
-    # try:
-    #     requirements = agent.analyze_input(sample_data["input"])
-    #     ambiguities = agent.identify_ambiguities()
-    #     tech_stack = agent.generate_tech_recommendations()
     
 
 @router.get("/task_status/{task_id}")
@@ -438,7 +411,8 @@ async def conversation_with_doc(request:ChatHistoryDetails,current_user = Depend
         if current_user["regular_login_token"]["id"] == request.user_id:
             chat_context = request.model_dump()
             #parse message for LLM and send it for query
-            LLM_response = ProjectScopingAgent.chat_with_doc(context=chat_context)
+            print(f"chat_context: {chat_context['message']}")
+            LLM_response = await ProjectScopingAgent.chat_with_doc(context=chat_context["message"])
             return {"message": f"{LLM_response['message']}"}
         else:
             raise HTTPException(status_code=400, detail=f"User ID mismatch")
@@ -446,9 +420,9 @@ async def conversation_with_doc(request:ChatHistoryDetails,current_user = Depend
         raise
     except Exception as e:
         logger.error(f"Error in chat-with-doc: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal server error")
-    finally:
-        chat_context["message"].append({"role": "assistant", "content": LLM_response, "timestamp": datetime.now().isoformat()})
-        await save_chat_with_doc(chat_context=chat_context, db=db)
+    #     raise HTTPException(status_code=500, detail=f"Internal server error")
+    # finally:
+    #     chat_context["message"].append({"role": "assistant", "content": LLM_response, "timestamp": datetime.now().isoformat()})
+    #     await save_chat_with_doc(chat_context=chat_context, db=db)
 
     

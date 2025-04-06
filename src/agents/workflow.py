@@ -13,13 +13,16 @@ import base64
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
 from typing import List
 from utils.logger import logger
+import asyncio
+from utils.prompts import Initial_phase, chat_with_context
+from utils.prompts_response import ProjectDefinition, Chat_with_context
 
 llm = ChatOpenAI(temperature=1, api_key=settings.OPENAI_CHATGPT, model="gpt-4o-mini")
 # llm_vision = ChatOpenAI(temperature=1, api_key=settings.OPENAI_CHATGPT, model="gpt-4-vision-preview")
 
 class ProjectScopingAgent:
     def __init__(self):
-        self.requirements = {}
+        self.requirements = []
         self.ambiguities = []
         self.tech_stack = []
         self.alternatives = []
@@ -30,88 +33,97 @@ class ProjectScopingAgent:
     #     Analyse the data provided and create a comprehensive SUmmary of the project so that the downstream prompts can understand the application/problem they are trying to build/solve, techinical requirements provided, Constraints mentioned in the data, technologies expected to use, required time lines 
     # """)
         
-    def analyze_input(self, parsed_data: dict) -> dict:
+    async def analyze_input(self, parsed_data: dict) -> dict:
         """Process parsed data to extract key requirements"""
-        prompt = ChatPromptTemplate.from_template("""
-        Analyze the project document and provide a comprehensive technical breakdown and the Teams and roles responsible for the project completion. 
-        Follow this structure STRICTLY:
-        **Input Analysis:**
-        {input}
-        
+        try:
+            input_str = parsed_data["document"]
+            logger.info(f"input_str: {input_str}")
+            logger.info(f"type: {type(input_str)}")
+            prompt = ChatPromptTemplate.from_template(Initial_phase)
+            # prompt = ChatPromptTemplate.from_template("""
+            # Analyze the project document and provide a comprehensive technical breakdown and the Teams and roles responsible for the project completion. 
+            # Follow this structure STRICTLY:
+            # **Input Analysis:**
+            # {input}
+            
 
-        *Response Format (JSON ONLY):**
-        {{
-        "project_definition": {{
-            "aim": "<100-word concise statement>",
-            "process flow":[
-                            "For the given task, provide an end-to-end architecture with step-by-step details. For each step, specify:
+            # *Response Format (JSON ONLY):**
+            # {{
+            # "project_definition": {{
+            #     "aim": "<100-word concise statement>",
+            #     "process flow":[
+            #                     "For the given task, provide an end-to-end architecture with step-by-step details. For each step, specify:
 
-                            What happens at this stage
-                            The best technologies or tools to use
-                            The exact engineering roles required (not broad categories, but specific positions such as Backend Engineer, Data Engineer, Cloud Engineer, etc.)
-                            The number of people required for each role
-                            The estimated time to complete this step
-                            Format the response as follows:
+            #                     What happens at this stage
+            #                     The best technologies or tools to use
+            #                     The exact engineering roles required (not broad categories, but specific positions such as Backend Engineer, Data Engineer, Cloud Engineer, etc.)
+            #                     The number of people required for each role
+            #                     The estimated time to complete this step
+            #                     Format the response as follows:
 
-                            Step 1: <Step Name>
-                            Description: <Detailed explanation>
-                            Technologies to Use: <List of specific technologies>
-                            Roles Involved:
-                            Frontend Engineer (1x) - Responsible for UI & integrations
-                            Backend Engineer (2x) - API development & business logic
-                            Cloud Engineer (1x) - Infrastructure setup & scaling
-                            Estimated Time to Complete: <Time>
-                            Step 2: <Step Name>
-                            ..."]
-            "scope": {{
-            "included": ["list", "of", "scope", "items"],
-            "excluded": ["out-of-scope", "elements"]
-            }},
-            "objectives": ["business", "technical", "objectives"],
-            "pain_points": {{
-            "explicit": ["client-stated", "pain", "points"],
-            "inferred": ["AI-identified", "potential", "issues"]
-            }}
-        }},
+            #                     Step 1: <Step Name>
+            #                     Description: <Detailed explanation>
+            #                     Technologies to Use: <List of specific technologies>
+            #                     Roles Involved:
+            #                     Frontend Engineer (1x) - Responsible for UI & integrations
+            #                     Backend Engineer (2x) - API development & business logic
+            #                     Cloud Engineer (1x) - Infrastructure setup & scaling
+            #                     Estimated Time to Complete: <Time>
+            #                     Step 2: <Step Name>
+            #                     ..."]
+            #     "scope": {{
+            #     "included": ["list", "of", "scope", "items"],
+            #     "excluded": ["out-of-scope", "elements"]
+            #     }},
+            #     "objectives": ["business", "technical", "objectives"],
+            #     "pain_points": {{
+            #     "explicit": ["client-stated", "pain", "points"],
+            #     "inferred": ["AI-identified", "potential", "issues"]
+            #     }}
+            # }},
 
-        "technology_stack": {{
-            "client_specified": {{
-            "tools": ["requested", "technologies"],
-            "implementation_strategy": "Approach to integrate these"
-            }},
-            "recommended_alternatives": [
-            {{
-                "tool": "Alternative Technology",
-                "advantage": "Cost/Time/Performance Benefit",
-                "migration_complexity": "Low/Medium/High"
-            }}
-            ]
-        }},
-        "risk_analysis": {{
-            "technical_risks": ["potential", "technical", "challenges"],
-            "mitigation_strategies": ["preventive", "measures"]
-        }}
-        }}
+            # "technology_stack": {{
+            #     "client_specified": {{
+            #     "tools": ["requested", "technologies"],
+            #     "implementation_strategy": "Approach to integrate these"
+            #     }},
+            #     "recommended_alternatives": [
+            #     {{
+            #         "tool": "Alternative Technology",
+            #         "advantage": "Cost/Time/Performance Benefit",
+            #         "migration_complexity": "Low/Medium/High"
+            #     }}
+            #     ]
+            # }},
+            # "risk_analysis": {{
+            #     "technical_risks": ["potential", "technical", "challenges"],
+            #     "mitigation_strategies": ["preventive", "measures"]
+            # }}
+            # }}
 
-        **Special Instructions:**
-        1. For pain points: Identify 3-5 key issues even if not explicitly stated
-        2. Team scaling: Use formula: developers_needed = base_count * (original_duration/compressed_duration)
-        3. Alternatives: Prioritize COTS > Open Source > Custom Build
-        4. Architecture: Include failover mechanisms and scalability considerations
-        5. Risks: Highlight deadline-related risks specifically
-        """)
-        
-        
-        chain = prompt | llm | StrOutputParser()
-        response = chain.invoke({"input": str(parsed_data)})
-        
-        # Debugging: Print raw LLM response
-        print("Raw LLM Response:", response)
-        
-        self.requirements = self._safe_json_parse(response)
-        return self.requirements
+            # **Special Instructions:**
+            # 1. For pain points: Identify 3-5 key issues even if not explicitly stated
+            # 2. Team scaling: Use formula: developers_needed = base_count * (original_duration/compressed_duration)
+            # 3. Alternatives: Prioritize COTS > Open Source > Custom Build
+            # 4. Architecture: Include failover mechanisms and scalability considerations
+            # 5. Risks: Highlight deadline-related risks specifically
+            # """)
+            
+            
+            chain = prompt | llm.with_structured_output(ProjectDefinition)
+            response= await chain.ainvoke({"document": input_str})
+            # response = await self._safe_json_parse(response)
+            print(f"response: {response}")
+            return response.to_markdown()
+            # print(f"type: {type(response)}")
+            # self.requirements.append(response)
+            # return self.requirements[0]
 
-    def identify_ambiguities(self):
+        except Exception as e:
+            logger.error(f"Error in analyze_input: {e}")
+            raise
+
+    async def identify_ambiguities(self):
         """Detect vague requirements needing clarification"""
         prompt = ChatPromptTemplate.from_template("""
         Identify ambiguities in these requirements and technicial challeges: {input}
@@ -125,7 +137,7 @@ class ProjectScopingAgent:
         self.ambiguities = self._safe_json_parse(response)
         return self.ambiguities
 
-    def generate_tech_recommendations(self): 
+    async def generate_tech_recommendations(self): 
         """Suggest technology stacks with cost analysis"""
         prompt = ChatPromptTemplate.from_template("""
         Based on requirements: {input}
@@ -158,10 +170,12 @@ class ProjectScopingAgent:
         self.tech_stack = self._safe_json_parse(response)
         return self.tech_stack
     
-    def _safe_json_parse(self, json_str: str) -> dict:
+    async def _safe_json_parse(self, json_str: str) -> dict:
         """Handle JSON parsing with error recovery"""
         try:
             # Remove markdown code blocks if present
+            if asyncio.iscoroutine(json_str):
+                json_str = await json_str
             cleaned = json_str.replace('```json', '').replace('```', '').strip()
             return json.loads(cleaned)
         except json.JSONDecodeError as e:
@@ -398,5 +412,12 @@ class ProjectScopingAgent:
         return response.content
     
     @staticmethod
-    def chat_with_doc(context:List[dict]):
-        return {"message": "this is from LLM chat responding to user question regarding the document and its recommendataion: this needs to be implemented"}
+    async def chat_with_doc(context:List[dict]):
+        prompt = ChatPromptTemplate.from_template(chat_with_context)
+        user_latest_chat = context[-1]['content']
+        chain = prompt | llm.with_structured_output(Chat_with_context)
+        logger.info(f"chat_context: {context}")
+        logger.info(f"type of context: {type(context)}")
+        logger.info(f"type of context[0]: {chain}")
+        response = await chain.ainvoke({"chat_context": context[:-1], "user_chat": user_latest_chat})
+        return {"message": response.to_markdown()}
