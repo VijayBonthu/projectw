@@ -20,7 +20,8 @@ class ProjectDefinition(BaseModel):
         title = self.title
 
         if not self.is_technical_document:
-            return md
+            md = f"#### Document Analysis\n{self.document_analysis}"
+            return md, title
         
         md = f"## Project Statement\n{self.project_statement}\n\n"
 

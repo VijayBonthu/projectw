@@ -1510,7 +1510,7 @@ const Dashboard: React.FC = () => {
         {/* Main content area with horizontal split view */}
         <div className="flex flex-1 h-full">
           {/* Main content area - take full width on mobile */}
-          <div className={`${isSplitView && !isMobile ? 'w-1/2' : 'w-full'} h-full flex flex-col overflow-hidden`}>
+          <div className={`${isSplitView && !isMobile ? 'w-1/2' : 'w-full md:w-full'} h-full flex flex-col overflow-hidden`}>
             {activeConversation ? (
               // Chat window
               <div className="flex-1 flex flex-col h-full overflow-hidden">

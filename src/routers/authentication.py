@@ -315,7 +315,7 @@ async def test_jira_auth():
 @router.get("/decode_token/{token}")
 async def decode_token(token:str):
     token_decoder = TokenDecoder()
-    return token_decoder.decode_oauth_token(token=token)
+    return await token_decoder.decode_oauth_token(token=token)
 
 @router.post("/validate_token")
 async def validate_token(credentials: HTTPAuthorizationCredentials = Depends(security)):

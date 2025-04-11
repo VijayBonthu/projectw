@@ -1,9 +1,15 @@
-from fastapi import FastAPI, Request, Response, Depends, HTTPException, Header
+from fastapi import FastAPI, Request, Response, Depends, HTTPException, Header, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from typing import Optional, Callable
 from starlette.datastructures import MutableHeaders
 import secrets
 from utils.logger import logger
+from utils.rate_limit import lifespan, rate_limit_key, CustomRateLimiter
+from fastapi_limiter import FastAPILimiter
+from fastapi.responses import JSONResponse
+
+MESSAGE_LIMIT = 30
+TIME_LIMIT = 60 #seconds
 
 class CSRFMiddleware(BaseHTTPMiddleware):
     def __init__(
@@ -69,4 +75,37 @@ def get_csrf_token(
             detail="CSRF token is missing"
         )
     return csrf_token
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # Skip rate limiting for preflight requests and health checks
+        if request.method.upper() == "OPTIONS" or request.url.path in ["/health", "/metrics"]:
+            return await call_next(request)
+        logger.info(f"request in ratelimitmiddleware: {request.headers}")
+        
+        try:
+            redis = await FastAPILimiter.redis
+            key = await rate_limit_key(request)
+            full_key = f"{FastAPILimiter.prefix}{key}"
+            
+            # Atomic increment and check
+            current = await redis.incr(full_key)
+            if current == 1:
+                await redis.expire(full_key, TIME_LIMIT)  # Set expiry only once in seconds
+            
+            # Configured rate limit (e.g., 100 requests/minute)
+            limit = MESSAGE_LIMIT
+            if current > limit:
+                logger.warning(f"Rate limit exceeded for {key}")
+                return JSONResponse(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    content={"error": "rate_limit_exceeded", "message": "Too many requests"},
+                    headers={"Retry-After": "60"}
+                )
+            
+            return await call_next(request)
+        except Exception as e:
+            logger.error(f"Rate limit error: {e}")
+            return await call_next(request)
 

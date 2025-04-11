@@ -17,6 +17,7 @@ from p_model_type import JiraTokenRequest, ChatHistoryDetails
 import asyncio
 import uuid
 from datetime import datetime
+from utils.document_save import get_s3_client,ensure_bucket_exists, upload_document_s3
 
 router = APIRouter()
 # accessllm = AccessLLM(api_key=os.getenv("OPENAI_CHATGPT"))
@@ -167,10 +168,24 @@ async def upload_file(
                 logger.info(f"completed saving the file")
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"failed to save the file: {str(e)}")
+        
+        try:
+            with open(file_path, 'rb') as file_obj:
+                s3 = get_s3_client()
+                response = ensure_bucket_exists(s3_client=s3, bucket_name= settings.S3_BUCKET_NAME)
+                s3_file_path  = f"{UPLOADS_DIR}/{current_token['regular_login_token']['id']}/{document_name}_{file_uuid}.{file_extension}"
+                logger.info(f"ensuring s3 is active with respose{response}")
+                if response['bucket_status'] == 'exists':
+                    document_id = upload_document_s3(s3_client=s3, file_obj=file_obj, current_document_path=s3_file_path,content_type='application/pdf',bucket_name=settings.S3_BUCKET_NAME)
+        except HTTPException as e:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"failed to upload document to s3 since there is no bucket")
+        
+
+
         try:
             user_doc = {
                 "user_id": current_token["regular_login_token"]["id"],
-                "document_path": file_path
+                "document_path": s3_file_path
             }
             logger.info(f"user doc dict: {user_doc}")
             response = await user_documents(doc_data=user_doc, db=db)
@@ -420,9 +435,9 @@ async def conversation_with_doc(request:ChatHistoryDetails,current_user = Depend
         raise
     except Exception as e:
         logger.error(f"Error in chat-with-doc: {str(e)}")
-    #     raise HTTPException(status_code=500, detail=f"Internal server error")
-    # finally:
-    #     chat_context["message"].append({"role": "assistant", "content": LLM_response, "timestamp": datetime.now().isoformat()})
-    #     await save_chat_with_doc(chat_context=chat_context, db=db)
+        raise HTTPException(status_code=500, detail=f"Internal server error")
+    finally:
+        chat_context["message"].append({"role": "assistant", "content": LLM_response, "timestamp": datetime.now().isoformat()})
+        await save_chat_with_doc(chat_context=chat_context, db=db)
 
     

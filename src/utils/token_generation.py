@@ -29,7 +29,7 @@ def create_token(user_data:dict):
     except JWTError as e:
         raise Exception(f"Failed to create token: {str(e)}")
 
-def validate_token(token:str, credential_exception):
+async def validate_token(token:str, credential_exception):
     try:
         if not token:
             raise Exception(f"No token provided in the header")
@@ -47,7 +47,7 @@ def validate_token(token:str, credential_exception):
     except JWTError:
         raise credential_exception
 
-def validate_token_incoming_requests(token:str):
+async def validate_token_incoming_requests(token:str):
     try:
         if not token:
             raise Exception(f"No token provided in the header")
@@ -57,7 +57,6 @@ def validate_token_incoming_requests(token:str):
             key=settings.SECRET_KEY_J,
             algorithms=settings.ALGORITHM
             )
-        
         exp = payload.get("exp")
         if not exp or datetime.fromtimestamp(exp, tz=timezone.utc)<datetime.now(timezone.utc):
             raise Exception(f"token expired")
@@ -138,7 +137,7 @@ def validate_jira_token(token: str):
         )
 class TokenDecoder:
     @staticmethod
-    def decode_oauth_token(token: str):
+    async def decode_oauth_token(token: str):
         try:
             parts = token.split('.')
             if  len(parts) != 3:
@@ -160,7 +159,7 @@ async def validate_app_user(token:str):
         token = token
         logger.info(f"token: {token}")
         token_decoder = TokenDecoder()
-        payload = token_decoder.decode_oauth_token(token=token)
+        payload = await token_decoder.decode_oauth_token(token=token)
         logger.info(f"payload: {payload}")
         # if payload['provider'] == "Jira":
         #     secret = await get_jira_certs_async()
@@ -172,6 +171,6 @@ async def validate_app_user(token:str):
         #     secret = settings.SECRET_KEY_J
         #     logger.info(f"secret_local: {secret}")
 
-        return validate_token(token=token, credential_exception=credential_exception)
+        return await validate_token(token=token, credential_exception=credential_exception)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"error {str(e)}")
