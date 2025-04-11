@@ -40,5 +40,6 @@ dist-ssr
 rules.mdc
 structure.tsx
 project description.mdc
-
+.cursor
+rules_frontend.mdc
 

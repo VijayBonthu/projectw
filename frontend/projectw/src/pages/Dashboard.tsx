@@ -1213,7 +1213,7 @@ const Dashboard: React.FC = () => {
       }
       
       // Listen for messages from the popup
-      const handleAuthMessage = (event) => {
+      const handleAuthMessage = (event: MessageEvent) => {
         console.log("Received message:", event.origin, event.data);
         
         // Check if this message contains Jira token information
@@ -1273,13 +1273,13 @@ const Dashboard: React.FC = () => {
 
   // Add these functions for GitHub and Azure (placeholders for now)
   const handleGitHubIntegration = () => {
-    toast.info("GitHub integration coming soon!");
+    toast.success("GitHub integration coming soon!");
     setIntegrationTab('github');
     setShowIntegrationPanel(true);
   };
 
   const handleAzureIntegration = () => {
-    toast.info("Azure DevOps integration coming soon!");
+    toast.success("Azure DevOps integration coming soon!");
     setIntegrationTab('azure');
     setShowIntegrationPanel(true);
   };
@@ -1484,90 +1484,80 @@ const Dashboard: React.FC = () => {
         activeConversationId={activeConversation?.id || null}
       />
       
-      {/* Rest of your Dashboard component */}
+      {/* Main content area - improved mobile responsiveness */}
       <main 
-        className={`flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300 ease-in-out
-          ${!isMobile ? (sidebarExpanded ? 'ml-64' : 'ml-16') : (sidebarExpanded ? 'ml-64' : 'ml-0')}`}
+        className={`flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300 ease-in-out`}
         style={{ 
           position: 'relative',
-          width: `calc(100% - ${sidebarExpanded ? '16rem' : isMobile ? '0' : '4rem'})`,
-          marginLeft: `${sidebarExpanded ? '16rem' : isMobile ? '0' : '4rem'}`
+          width: isMobile ? '100%' : `calc(100% - ${sidebarExpanded ? '16rem' : '4rem'})`,
+          marginLeft: isMobile ? (sidebarExpanded ? '0' : '0') : (sidebarExpanded ? '16rem' : '4rem')
         }}
       >
-        {/* Sidebar section */}
-        <div className="flex-none relative w-auto">
-          <Sidebar 
-            expanded={sidebarExpanded}
-            toggleExpanded={toggleSidebar}
-            onSelectConversation={handleSelectConversation}
-            onNewChat={handleNewChat}
-            logout={handleLogout}
-            isMobile={isMobile}
-            activeConversationId={activeConversation?.id || null}
-          />
-        </div>
-        
         {/* Main content area with horizontal split view */}
         <div className="flex flex-1 h-full">
-          {/* Main content area - take full width on mobile */}
-          <div className={`${isSplitView && !isMobile ? 'w-1/2' : 'w-full md:w-full'} h-full flex flex-col overflow-hidden`}>
+          {/* Main content area - improved responsive behavior */}
+          <div className={`${isSplitView && !isMobile ? 'w-1/2' : 'w-full'} h-full flex flex-col overflow-hidden`}>
             {activeConversation ? (
               // Chat window
               <div className="flex-1 flex flex-col h-full overflow-hidden">
-                {/* Chat header */}
-                <div className="flex-none p-4 border-b border-white/10 flex justify-between items-center bg-indigo-950/50">
-                  <h2 className="text-xl font-semibold text-white">{activeConversation.title}</h2>
+                {/* Chat header - improved for mobile */}
+                <div className="flex-none p-2 md:p-4 border-b border-white/10 flex justify-between items-center bg-indigo-950/50">
+                  <h2 className="text-lg md:text-xl font-semibold text-white truncate">{activeConversation.title}</h2>
                 </div>
                 
-                {/* Chat messages */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                  {/* Select All checkbox header */}
-                  <div className="sticky top-0 z-10 p-3 bg-[#141332]/90 border-b border-white/10 flex items-center">
-                    <label className="flex items-center space-x-2 text-sm text-gray-300">
+                {/* Chat messages - improved scrolling and spacing for mobile */}
+                <div className="flex-1 overflow-y-auto p-2 md:p-4 space-y-2 md:space-y-4">
+                  {/* Select All checkbox header - improved for mobile */}
+                  <div className="sticky top-0 z-10 p-2 md:p-3 bg-[#141332]/90 border-b border-white/10 flex items-center">
+                    <label className="flex items-center space-x-2 text-xs md:text-sm text-gray-300">
                       <input 
                         type="checkbox" 
                         checked={allMessagesSelected} 
                         onChange={toggleAllMessages}
-                        className="form-checkbox h-4 w-4 rounded text-purple-500"
+                        className="form-checkbox h-3 w-3 md:h-4 md:w-4 rounded text-purple-500"
                       />
                       <span>Include all messages as context</span>
                     </label>
                   </div>
                   
-                  <div className="p-4 space-y-6">
-                    {/* Inside the message rendering section - looking for both user and AI messages */}
+                  <div className="p-2 md:p-4 space-y-4 md:space-y-6">
+                    {/* Message rendering - improved for mobile */}
                     {activeConversation && activeConversation.messages.map((msg, index) => (
-                      <div key={msg.id || index} className={`mb-4 flex items-start ${msg.role === 'user' ? 'mr-12' : 'ml-12'}`}>
+                      <div key={msg.id || index} className={`mb-2 md:mb-4 flex items-start ${msg.role === 'user' ? 'mr-6 md:mr-12' : 'ml-6 md:ml-12'}`}>
                         {/* Checkbox for message selection */}
-                        <div className="mr-2 mt-2">
+                        <div className="mr-1 md:mr-2 mt-2">
                           <input 
                             type="checkbox"
                             checked={msg.id ? debugSelectionState(msg.id) : false}
                             onChange={() => msg.id && toggleMessageSelection(msg.id)}
-                            className="form-checkbox h-4 w-4 rounded text-purple-500 cursor-pointer"
+                            className="form-checkbox h-3 w-3 md:h-4 md:w-4 rounded text-purple-500 cursor-pointer"
                           />
                         </div>
                         
                         {msg.role === 'assistant' ? (
-                          // AI message with export options
-                          <div className="flex-1 flex flex-col space-y-2 bg-[#1a1745] rounded-lg p-4 max-w-3xl overflow-hidden">
-                            <div className="flex items-start space-x-3">
-                              <div className="h-8 w-8 rounded-md bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center flex-shrink-0">
-                                <span className="text-sm font-bold text-white">AI</span>
+                          // AI message with export options - improved for mobile
+                          <div className="flex-1 flex flex-col space-y-1 md:space-y-2 bg-[#1a1745] rounded-lg p-2 md:p-4 max-w-full md:max-w-3xl overflow-hidden">
+                            <div className="flex items-start space-x-2 md:space-x-3">
+                              <div className="h-6 w-6 md:h-8 md:w-8 rounded-md bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center flex-shrink-0">
+                                <span className="text-xs md:text-sm font-bold text-white">AI</span>
                               </div>
                               <div className="flex-1 min-w-0 overflow-hidden">
-                                <div className="prose text-gray-100 max-w-none overflow-hidden break-words whitespace-pre-wrap">
+                                <div className="prose text-gray-100 max-w-none overflow-hidden break-words whitespace-pre-wrap text-sm md:text-base">
                                   {/* Render markdown content */}
-                                  <div dangerouslySetInnerHTML={{ __html: marked.parse(msg.content) }} className="overflow-hidden" />
+                                  <div dangerouslySetInnerHTML={{ 
+                                    __html: typeof marked.parse(msg.content) === 'string' 
+                                      ? marked.parse(msg.content) as string 
+                                      : String(marked.parse(msg.content)) 
+                                  }} className="overflow-hidden" />
                                 </div>
                                 
-                                {/* Export options bar */}
-                                <div className="mt-4 pt-2 border-t border-white/10 flex justify-end space-x-2">
+                                {/* Export options bar - improved for mobile */}
+                                <div className="mt-2 md:mt-4 pt-1 md:pt-2 border-t border-white/10 flex justify-end space-x-1 md:space-x-2">
                                   <button 
                                     onClick={() => handleCopyMessage(msg)}
-                                    className="flex items-center text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-white/5 transition-colors !p-0"
+                                    className="flex items-center text-xs text-gray-400 hover:text-white px-1 md:px-2 py-1 rounded hover:bg-white/5 transition-colors"
                                   >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 md:h-3.5 md:w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                     </svg>
                                     Copy
@@ -1575,28 +1565,29 @@ const Dashboard: React.FC = () => {
                                 
                                   <button
                                     onClick={() => handleDownloadPDF(msg)}
-                                    className="flex items-center text-xs text-gray-400 hover:text-white px-2 py-1 rounded hover:bg-white/5 transition-colors !p-0"
+                                    className="flex items-center text-xs text-gray-400 hover:text-white px-1 md:px-2 py-1 rounded hover:bg-white/5 transition-colors"
                                   >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 md:h-3.5 md:w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 10v6m0 0l-3-3m3 3l3 3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                     </svg>
-                                    Download PDF
+                                    <span className="hidden md:inline">Download PDF</span>
+                                    <span className="inline md:hidden">PDF</span>
                                   </button>
                                 </div>
                               </div>
                             </div>
                           </div>
                         ) : (
-                          // User message
-                          <div className="flex-1 bg-[#2b2a63] rounded-lg p-4 max-w-3xl overflow-hidden">
-                            <div className="flex items-start space-x-3">
-                              <div className="h-8 w-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
+                          // User message - improved for mobile
+                          <div className="flex-1 bg-[#2b2a63] rounded-lg p-2 md:p-4 max-w-full md:max-w-3xl overflow-hidden">
+                            <div className="flex items-start space-x-2 md:space-x-3">
+                              <div className="h-6 w-6 md:h-8 md:w-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 md:h-4 md:w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
                                   <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
                                 </svg>
                               </div>
                               <div className="flex-1 min-w-0 overflow-hidden">
-                                <p className="text-white whitespace-pre-wrap break-words overflow-hidden">{msg.content}</p>
+                                <p className="text-white whitespace-pre-wrap break-words overflow-hidden text-sm md:text-base">{msg.content}</p>
                               </div>
                             </div>
                           </div>
@@ -1609,7 +1600,7 @@ const Dashboard: React.FC = () => {
                 </div>
                 {/* Chat input - only shown when conversation is active and not in upload mode */}
                 {activeConversation && !showUploadUI && (
-                  <div className="flex-none p-4 border-t border-white/10 bg-indigo-950/50">
+                  <div className="flex-none p-2 md:p-4 border-t border-white/10 bg-indigo-950/50">
                     <div className="relative">
                       <textarea
                         value={message}
@@ -1621,9 +1612,9 @@ const Dashboard: React.FC = () => {
                           }
                         }}
                         placeholder="Type your message here..."
-                        className="w-full px-4 py-3 pr-16 bg-white/5 border border-white/10 rounded-lg text-white 
+                        className="w-full px-3 md:px-4 py-2 md:py-3 pr-12 md:pr-16 bg-white/5 border border-white/10 rounded-lg text-white 
                           placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-purple-500
-                          min-h-[50px] max-h-[96px] overflow-y-auto resize-none"
+                          min-h-[40px] md:min-h-[50px] max-h-[96px] overflow-y-auto resize-none text-sm md:text-base"
                         style={{ height: 'auto', lineHeight: '1.5' }}
                         rows={1}
                         ref={textareaRef}
@@ -1631,7 +1622,7 @@ const Dashboard: React.FC = () => {
                       <button
                         onClick={handleSendMessage}
                         disabled={!message.trim() || isSendingMessage}
-                        className="absolute right-5 bottom-2.5 p-1.5
+                        className="absolute right-3 md:right-5 bottom-2 md:bottom-2.5 p-1 md:p-1.5
                           bg-gradient-to-r from-blue-600 to-purple-600 rounded-full
                           border border-purple-500/30 shadow-md text-white
                           hover:from-blue-500 hover:to-purple-500 focus:outline-none
@@ -1639,12 +1630,12 @@ const Dashboard: React.FC = () => {
                           transition-all duration-200"
                       >
                         {isSendingMessage ? (
-                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                          <svg className="animate-spin h-3 w-3 md:h-4 md:w-4" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                           </svg>
                         ) : (
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 md:h-4 md:w-4" viewBox="0 0 20 20" fill="currentColor">
                             <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
                           </svg>
                         )}
@@ -1654,29 +1645,30 @@ const Dashboard: React.FC = () => {
                 )}
               </div>
             ) : (
-              // Upload UI
+              // Upload UI - improved for mobile
               <div className="flex-1 flex flex-col overflow-y-auto bg-indigo-950">
-                <div className="max-w-3xl mx-auto w-full py-12 px-4">
-                  <div className="text-center mb-8">
-                    <h1 className="text-3xl font-bold text-white mb-2">Upload Your Document</h1>
-                    <p className="text-lg text-gray-300">Upload a project document to analyze requirements, and get AI assistance</p>
+                <div className="max-w-3xl mx-auto w-full py-6 md:py-12 px-4">
+                  <div className="text-center mb-4 md:mb-8">
+                    <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">Upload Your Document</h1>
+                    <p className="text-base md:text-lg text-gray-300">Upload a project document to analyze requirements, and get AI assistance</p>
                   </div>
                   
-                  <div className="bg-indigo-900/40 border border-white/10 rounded-xl p-8 backdrop-blur-sm">
-                    <div className="mb-6">
-                      <h2 className="text-xl font-semibold text-white mb-2">Document Upload</h2>
-                      <p className="text-gray-300">Upload project requirements, specifications, or any documents you need to analyze</p>
+                  <div className="bg-indigo-900/40 border border-white/10 rounded-xl p-4 md:p-8 backdrop-blur-sm">
+                    <div className="mb-4 md:mb-6">
+                      <h2 className="text-lg md:text-xl font-semibold text-white mb-2">Document Upload</h2>
+                      <p className="text-sm md:text-base text-gray-300">Upload project requirements, specifications, or any documents you need to analyze</p>
                     </div>
                     
+                    {/* Rest of upload UI with mobile improvements */}
                     {uploadedFiles.length > 0 ? (
-                      <div className="mb-6">
+                      <div className="mb-4 md:mb-6">
                         <div className="mb-3 flex items-center justify-between">
-                          <h3 className="text-white font-medium">Selected Files ({uploadedFiles.length})</h3>
+                          <h3 className="text-white text-sm md:text-base font-medium">Selected Files ({uploadedFiles.length})</h3>
                           <button 
                             onClick={() => setUploadedFiles([])}
-                            className="text-sm text-gray-400 hover:text-white flex items-center"
+                            className="text-xs md:text-sm text-gray-400 hover:text-white flex items-center"
                           >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 md:h-4 md:w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
                             Clear All
@@ -1685,14 +1677,14 @@ const Dashboard: React.FC = () => {
                         
                         <div className="max-h-40 overflow-y-auto pr-1 border border-white/10 rounded-lg">
                           {uploadedFiles.map((file, index) => (
-                            <div key={index} className="flex items-center p-3 bg-white/5 border-b border-white/10 last:border-b-0">
-                              <div className="mr-3 bg-indigo-600 rounded-md p-1.5 flex-shrink-0">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <div key={index} className="flex items-center p-2 md:p-3 bg-white/5 border-b border-white/10 last:border-b-0">
+                              <div className="mr-2 md:mr-3 bg-indigo-600 rounded-md p-1 md:p-1.5 flex-shrink-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 md:h-4 md:w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
                               </div>
                               <div className="flex-1 truncate">
-                                <p className="text-sm font-medium text-white truncate">{file.name}</p>
+                                <p className="text-sm md:text-base font-medium text-white truncate">{file.name}</p>
                                 <p className="text-xs text-gray-400">{(file.size / 1024).toFixed(2)} KB</p>
                               </div>
                               <button 
@@ -1703,7 +1695,7 @@ const Dashboard: React.FC = () => {
                                 }}
                                 className="ml-2 text-gray-400 hover:text-white flex-shrink-0"
                               >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 md:h-4 md:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                 </svg>
                               </button>
@@ -1714,15 +1706,16 @@ const Dashboard: React.FC = () => {
                         <button
                           onClick={handleProcessFiles}
                           disabled={isProcessing}
-                          className="w-full mt-4 py-3 px-4 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600
+                          className="w-full mt-4 py-2 md:py-3 px-4 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600
                             border border-purple-500/30 shadow-md transform transition-all duration-200 
                             hover:translate-y-[-2px] hover:shadow-lg hover:shadow-purple-500/30 
-                            hover:from-blue-500 hover:to-purple-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                            hover:from-blue-500 hover:to-purple-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed
+                            text-sm md:text-base"
                         >
                           <span className="relative z-10 flex items-center justify-center text-white font-semibold">
                             {isProcessing ? (
                               <>
-                                <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
+                                <svg className="animate-spin h-4 w-4 md:h-5 md:w-5 mr-2" viewBox="0 0 24 24">
                                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
                                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                 </svg>
@@ -1730,7 +1723,7 @@ const Dashboard: React.FC = () => {
                               </>
                             ) : (
                               <>
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 md:h-5 md:w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                                 </svg>
                                 Process Documents
@@ -1741,7 +1734,7 @@ const Dashboard: React.FC = () => {
                       </div>
                     ) : (
                       <div 
-                        className="border-2 border-dashed border-white/20 rounded-lg p-12 text-center cursor-pointer hover:border-purple-400/50 transition-colors"
+                        className="border-2 border-dashed border-white/20 rounded-lg p-6 md:p-12 text-center cursor-pointer hover:border-purple-400/50 transition-colors"
                         onDragOver={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -1767,11 +1760,11 @@ const Dashboard: React.FC = () => {
                           accept=".pdf,.doc,.docx,.txt,.md"
                           multiple
                         />
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 md:h-12 md:w-12 mx-auto text-gray-400 mb-3 md:mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                         </svg>
-                        <p className="text-lg font-medium text-white mb-1">Drag and drop your files here</p>
-                        <p className="text-sm text-gray-400 mb-4">or click to browse files</p>
+                        <p className="text-base md:text-lg font-medium text-white mb-1">Drag and drop your files here</p>
+                        <p className="text-xs md:text-sm text-gray-400 mb-3 md:mb-4">or click to browse files</p>
                         <p className="text-xs text-gray-500">Supported formats: PDF, DOC, DOCX, TXT, MD</p>
                       </div>
                     )}
@@ -1792,20 +1785,34 @@ const Dashboard: React.FC = () => {
           )}
         </div>
       </main>
-      {/* For mobile devices, we'll show a modal instead of split view */}
+      
+      {/* For mobile devices, we'll show a modal instead of split view - position fixed for mobile */}
       {isSplitView && selectedJiraIssue && isMobile && (
-        <div className="fixed inset-0 z-50 bg-indigo-950/90 overflow-auto">
-          <JiraIssueDetail 
-            issueId={selectedJiraIssue} 
-            onClose={handleCloseSplitView} 
-          />
+        <div className="fixed inset-0 z-50 bg-indigo-950/95 overflow-auto">
+          <div className="p-4">
+            <button 
+              onClick={handleCloseSplitView}
+              className="mb-4 flex items-center text-sm text-white bg-indigo-700/50 px-3 py-1.5 rounded-lg"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
+              </svg>
+              Back to Chat
+            </button>
+            <JiraIssueDetail 
+              issueId={selectedJiraIssue} 
+              onClose={handleCloseSplitView} 
+            />
+          </div>
         </div>
       )}
-      {/* Add Toast Container at the bottom of your return statement */}
+      
+      {/* Add Toast Container at the bottom */}
       <div className="fixed bottom-4 right-4 z-50">
         {/* Toast notifications will appear here */}
       </div>
-      {/* Integration panel */}
+      
+      {/* Integration panel - improved for mobile */}
       <RightSidebar
         onJiraConnect={handleJiraIntegration}
         onGitHubConnect={handleGitHubIntegration}
