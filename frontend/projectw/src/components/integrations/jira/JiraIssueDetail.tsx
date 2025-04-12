@@ -5,12 +5,14 @@ import { toast } from 'react-hot-toast';
 interface JiraIssueDetailProps {
   issueId: string;
   onClose: () => void;
+  onAddAttachmentToAnalysis?: (file: File) => void;
 }
 
-const JiraIssueDetail: React.FC<JiraIssueDetailProps> = ({ issueId, onClose }) => {
+const JiraIssueDetail: React.FC<JiraIssueDetailProps> = ({ issueId, onClose, onAddAttachmentToAnalysis }) => {
   const [issueDetails, setIssueDetails] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadingAttachments, setLoadingAttachments] = useState<{[key: string]: boolean}>({});
   const API_URL = import.meta.env.VITE_API_URL;
 
   useEffect(() => {
@@ -112,6 +114,73 @@ const JiraIssueDetail: React.FC<JiraIssueDetailProps> = ({ issueId, onClose }) =
     
     processContent(adf.content);
     return result;
+  };
+
+  // Add a function to check if a file is of a supported type
+  const isSupportedFileType = (filename: string): boolean => {
+    const supportedExtensions = ['.pdf', '.docx', '.doc', '.txt', '.pptx', '.csv'];
+    const extension = filename.toLowerCase().substring(filename.lastIndexOf('.'));
+    return supportedExtensions.includes(extension);
+  };
+
+  // Function to handle attachment import
+  const handleImportAttachment = async (attachment: any) => {
+    try {
+      const attachmentId = attachment.id;
+      const filename = attachment.filename;
+      
+      // Check file type
+      if (!isSupportedFileType(filename)) {
+        toast.error(`Unsupported file type. Only PDF, DOCX, DOC, TXT, PPTX, and CSV files are supported.`);
+        return;
+      }
+      
+      // Set loading state for this specific attachment
+      setLoadingAttachments(prev => ({ ...prev, [attachmentId]: true }));
+      
+      // Get the authentication tokens
+      const token = localStorage.getItem('token') || 
+                   localStorage.getItem('regular_token') || 
+                   localStorage.getItem('google_auth_token');
+      const jiraToken = localStorage.getItem('jira_authorization');
+      
+      if (!token || !jiraToken) {
+        throw new Error("Authentication required");
+      }
+      
+      // Call the API to download the attachment
+      const response = await axios.get(
+        `${API_URL}/jira/download_attachments?issue_key=${issueDetails.key}&download_file_name=${filename}&attachment_id=${attachmentId}`, 
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'jira_authorization': jiraToken
+          },
+          responseType: 'blob' // Important: we need the raw file data
+        }
+      );
+      
+      // Create a File object from the response
+      const fileData = new File(
+        [response.data], 
+        filename, 
+        { type: response.data.type }
+      );
+      
+      // Pass the file to the parent component
+      if (onAddAttachmentToAnalysis) {
+        onAddAttachmentToAnalysis(fileData);
+        toast.success(`${filename} added to analysis queue`);
+      } else {
+        toast.error('Cannot add file to analysis');
+      }
+    } catch (err: any) {
+      console.error('Error importing attachment:', err);
+      toast.error(`Failed to import attachment: ${err.message || 'Unknown error'}`);
+    } finally {
+      // Clear loading state for this attachment
+      setLoadingAttachments(prev => ({ ...prev, [attachment.id]: false }));
+    }
   };
 
   return (
@@ -307,7 +376,7 @@ const JiraIssueDetail: React.FC<JiraIssueDetailProps> = ({ issueId, onClose }) =
               )}
             </div>
 
-            {/* Attachments */}
+            {/* Attachments - Modified with import button */}
             {getNestedProperty(issueDetails, 'fields.attachment', []).length > 0 && (
               <div className="mt-4">
                 <h4 className="text-sm uppercase text-gray-400 mb-2">
@@ -316,20 +385,44 @@ const JiraIssueDetail: React.FC<JiraIssueDetailProps> = ({ issueId, onClose }) =
                 <ul className="space-y-2">
                   {getNestedProperty(issueDetails, 'fields.attachment', []).map((attachment: any, index: number) => (
                     <li key={index} className="bg-indigo-950/70 p-2 rounded border border-indigo-800">
-                      <a 
-                        href={attachment.content || attachment.self} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="flex items-center text-blue-400 hover:text-blue-300"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                        </svg>
-                        {attachment.filename}
-                        <span className="ml-2 text-xs text-gray-400">
-                          ({Math.round((attachment.size || 0) / 1024)} KB)
-                        </span>
-                      </a>
+                      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2">
+                        <a 
+                          href={attachment.content || attachment.self} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="flex items-center text-blue-400 hover:text-blue-300 min-w-0"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                          </svg>
+                          <span className="truncate">{attachment.filename}</span>
+                          <span className="ml-2 text-xs text-gray-400 flex-shrink-0">
+                            ({Math.round((attachment.size || 0) / 1024)} KB)
+                          </span>
+                        </a>
+                        
+                        {/* Show import button only for supported file types */}
+                        {isSupportedFileType(attachment.filename) && onAddAttachmentToAnalysis && (
+                          <button
+                            className="flex items-center bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded px-2 py-1 transition-colors self-start md:self-center flex-shrink-0"
+                            onClick={() => handleImportAttachment(attachment)}
+                            disabled={loadingAttachments[attachment.id]}
+                            title="Import this file for analysis"
+                          >
+                            {loadingAttachments[attachment.id] ? (
+                              <svg className="animate-spin h-3 w-3 mr-1" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                            ) : (
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 13h6m-3-3v6" />
+                              </svg>
+                            )}
+                            Use for Analysis
+                          </button>
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>

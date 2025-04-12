@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { GroupedConversations, Conversation } from '../types/conversation';
+import { GroupedConversations, Conversation, ConversationMetadata, Message } from '../types/conversation';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -15,8 +15,8 @@ export const fetchConversations = async (): Promise<GroupedConversations> => {
   try {
     console.log('Fetching conversations...');
     
-    // Use the correct endpoint from your backend
-    const response = await axios.get(`${API_URL}/chat`, {
+    // Add cache-busting parameter to avoid stale data
+    const response = await axios.get(`${API_URL}/chat?_t=${new Date().getTime()}`, {
       headers: {
         'Authorization': `Bearer ${getToken()}`
       }

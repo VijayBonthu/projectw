@@ -14,6 +14,8 @@ interface SidebarProps {
   logout: () => void;
   isMobile: boolean;
   activeConversationId: string | null;
+  groupedConversations: GroupedConversations;
+  onRefreshConversations?: () => Promise<void>;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -23,36 +25,31 @@ const Sidebar: React.FC<SidebarProps> = ({
   onNewChat,
   logout,
   isMobile,
-  activeConversationId
+  activeConversationId,
+  groupedConversations,
+  onRefreshConversations
 }) => {
   // Local state
-  const [groupedConversations, setGroupedConversations] = useState<GroupedConversations>({
-    today: [],
-    yesterday: [],
-    lastWeek: [],
-    older: []
-  });
   const [renamingConversation, setRenamingConversation] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Fetch conversations on component mount
-  useEffect(() => {
-    fetchConversations();
-  }, []);
-
-  // Function to fetch conversations
+  // Use the parent's refresh function if provided, otherwise use local
   const fetchConversations = async () => {
-    try {
-      setLoading(true);
-      const grouped = await conversationService.fetchConversations();
-      setGroupedConversations(grouped);
-    } catch (error) {
-      console.error('Error fetching conversations:', error);
-      toast.error('Failed to load conversations');
-    } finally {
-      setLoading(false);
+    if (onRefreshConversations) {
+      await onRefreshConversations();
+    } else {
+      try {
+        setLoading(true);
+        const grouped = await conversationService.fetchConversations();
+        // We don't set state here anymore as it should be managed by the parent
+      } catch (error) {
+        console.error('Error fetching conversations:', error);
+        toast.error('Failed to load conversations');
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -102,15 +99,11 @@ const Sidebar: React.FC<SidebarProps> = ({
     try {
       await conversationService.renameConversation(chatId, newTitle.trim());
       
-      // Update local state
-      const updatedGroups = { ...groupedConversations };
-      Object.keys(updatedGroups).forEach(key => {
-        updatedGroups[key] = updatedGroups[key].map(conv => 
-          conv.chat_history_id === chatId ? { ...conv, title: newTitle.trim() } : conv
-        );
-      });
+      // Update done through parent refresh now
+      if (onRefreshConversations) {
+        await onRefreshConversations();
+      }
       
-      setGroupedConversations(updatedGroups);
       setRenamingConversation(null);
       setNewTitle('');
       
@@ -137,15 +130,11 @@ const Sidebar: React.FC<SidebarProps> = ({
     try {
       await conversationService.deleteConversation(chatId);
       
-      // Update local state
-      const updatedGroups = { ...groupedConversations };
-      Object.keys(updatedGroups).forEach(key => {
-        updatedGroups[key] = updatedGroups[key].filter(conv => 
-          conv.chat_history_id !== chatId
-        );
-      });
+      // Update done through parent refresh now
+      if (onRefreshConversations) {
+        await onRefreshConversations();
+      }
       
-      setGroupedConversations(updatedGroups);
       setActiveDropdown(null);
       
       // If this was the active conversation, go back to upload UI
