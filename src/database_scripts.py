@@ -96,4 +96,13 @@ async def user_documents(doc_data:dict, db:Session) -> dict:
     except SQLAlchemyError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"unable to create document data {str(e)}")
     
+async def get_summary_report(chat_history_id:str, db:Session)-> dict:
+    try:
+        query = db.query(models.ReportVersions).filter(models.ReportVersions.chat_history_id == chat_history_id).order_by(models.ReportVersions.created_at.desc())
+        record = query.first()
+        return record
+    except SQLAlchemyError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error occured with the DB, chat history id: {chat_history_id}, error: {str(e)}")
+
+    
 

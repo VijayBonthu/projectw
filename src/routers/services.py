@@ -2,13 +2,13 @@ from fastapi import File, UploadFile, Form, Depends, APIRouter, HTTPException, s
 from fastapi.responses import HTMLResponse
 import os
 from utils.token_generation import token_validator
-from utils.chat_history import save_chat_history, delete_chat_history, get_user_chat_history_details,get_single_user_chat_history, save_chat_with_doc
+from utils.chat_history import save_chat_history, delete_chat_history, get_user_chat_history_details,get_single_user_chat_history, save_chat_with_doc, save_report_version
 from getdata import ExtractText
 from processdata import AccessLLM
 from config import settings
 from sqlalchemy.orm import Session
 from models import get_db
-from database_scripts import user_documents
+from database_scripts import user_documents, get_summary_report
 from agents.workflow import ProjectScopingAgent
 from utils.logger import logger
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -18,6 +18,14 @@ import asyncio
 import uuid
 from datetime import datetime
 from utils.document_save import get_s3_client,ensure_bucket_exists, upload_document_s3
+from agents.workflow_graph import run_agent_pipeline
+import asyncio
+from utils.helper_utils import save_file, upload_to_s3
+from vectordb import vector_db, chunking
+from agents.agentic_workflow import main_report_summary
+from utils.router_llm import router_query_llm, conversation_summary_llm, count_token
+
+
 
 router = APIRouter()
 # accessllm = AccessLLM(api_key=os.getenv("OPENAI_CHATGPT"))
@@ -147,45 +155,49 @@ async def upload_file(
             if len(file_content) > eval(settings.FILE_SIZE):
                 raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File size exceed 10MB limit")
             logger.info("complete the file size check and reading < 50 MB")
-
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"file processing failed: {str(e)}")
-        
         if not file_content:
+            logger.warning(f"uploaded file is empty")
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty")
         logger.info(f"completed reading the file")
 
         file_uuid = str(uuid.uuid4())
         file_extension = content_document.filename.split(".")[-1]
         document_name = content_document.filename.split(".")[0]
-        os.makedirs(f"{UPLOADS_DIR}/{current_token['regular_login_token']['id']}", exist_ok=True) 
+        user_dir = f"{UPLOADS_DIR}/{current_token['regular_login_token']['id']}"
+        os.makedirs(user_dir, exist_ok=True) 
         
 
         file_path = os.path.join(f"{UPLOADS_DIR}/{current_token['regular_login_token']['id']}", f"{document_name}_{file_uuid}.{file_extension}")
-        try:
-            with open(file_path, "wb") as f:
-                f.write(file_content)
-                logger.info(f"completed saving the file")
-        except Exception as e:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"failed to save the file: {str(e)}")
+        # try:
+        #     with open(file_path, "wb") as f:
+        #         f.write(file_content)
+        #         logger.info(f"completed saving the file")
+        # except Exception as e:
+        #     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"failed to save the file: {str(e)}")
+        save_task = await save_file(file_path=file_path, file_content= file_content)
         
-        try:
-            with open(file_path, 'rb') as file_obj:
-                s3 = get_s3_client()
-                response = ensure_bucket_exists(s3_client=s3, bucket_name= settings.S3_BUCKET_NAME)
-                s3_file_path  = f"{UPLOADS_DIR}/{current_token['regular_login_token']['id']}/{document_name}_{file_uuid}.{file_extension}"
-                logger.info(f"ensuring s3 is active with respose{response}")
-                if response['bucket_status'] == 'exists':
-                    document_id = upload_document_s3(s3_client=s3, file_obj=file_obj, current_document_path=s3_file_path,content_type='application/pdf',bucket_name=settings.S3_BUCKET_NAME)
-        except HTTPException as e:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"failed to upload document to s3 since there is no bucket")
-        
+        # try:
+        #     with open(file_path, 'rb') as file_obj:
+        #         s3 = get_s3_client()
+        #         response = ensure_bucket_exists(s3_client=s3, bucket_name= settings.S3_BUCKET_NAME)
+        #         s3_file_path  = f"{UPLOADS_DIR}/{current_token['regular_login_token']['id']}/{document_name}_{file_uuid}.{file_extension}"
+        #         logger.info(f"ensuring s3 is active with respose{response}")
+        #         if response['bucket_status'] == 'exists':
+        #             document_id = upload_document_s3(s3_client=s3, file_obj=file_obj, current_document_path=s3_file_path,content_type='application/pdf',bucket_name=settings.S3_BUCKET_NAME)
+        # except HTTPException as e:
+        #         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"failed to upload document to s3 since there is no bucket")
 
+        upload_task = await upload_to_s3(file_path=file_path, file_extension=file_extension, file_uuid=file_uuid, document_name=document_name, current_token_id=current_token['regular_login_token']['id'], bucket_name= settings.S3_BUCKET_NAME, s3_folder=UPLOADS_DIR)
+
+        # await asyncio.gather(save_task, upload_task)
+        # logger.info(f"completed both saving and uploading the file to s3: {user_dir}")
 
         try:
             user_doc = {
                 "user_id": current_token["regular_login_token"]["id"],
-                "document_path": s3_file_path
+                "document_path": f"{UPLOADS_DIR}/{current_token['regular_login_token']['id']}/{document_name}_{file_uuid}.{file_extension}"
             }
             logger.info(f"user doc dict: {user_doc}")
             response = await user_documents(doc_data=user_doc, db=db)
@@ -208,15 +220,21 @@ async def upload_file(
     agent = ProjectScopingAgent()
     
     # Sample data must include the correct structure
-    sample_data = {
-        "document": raw_requirements
-    }
+    # sample_data = {
+    #     "document": raw_requirements
+    # }
+    # try:
+    #     requirements, title = await agent.analyze_input(sample_data)
     try:
-        requirements, title = await agent.analyze_input(sample_data)
+        # result = await run_agent_pipeline(document=[raw_requirements])
+        # logger.info(f"result from the agent: {result}")
+        result = {"message": ["THis is the content that is sent from run_agent_pipeliene"]}
+        return {"message": result["message"][-1], "document_id": response["document_id"], "title":"this is the test title"}
+        # return {"message": result["message"][-1].content, "document_id": response["document_id"], "title":next(item["output"].get("title") for item in result['req_analysis'] if item['agent'] == 'requirements_analyzer')}
+    except Exception as e:
+        logger.error(f"run pipeline failed: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Agent processing failed: {str(e)}")
         
-        
-
-        return {"message": requirements, "document_id": response["document_id"], "title":title}
     except Exception as e:
         return {"Critical Error":{str(e)}}
     
@@ -363,6 +381,7 @@ async def task_status_page(task_id: str, token: str = None):
     
     return HTMLResponse(content=html_content)
 
+
 @router.post('/chat')
 async def add_chat_history(request: ChatHistoryDetails,db:Session=Depends(get_db)):
     try:
@@ -374,6 +393,68 @@ async def add_chat_history(request: ChatHistoryDetails,db:Session=Depends(get_db
     except Exception as e:
         logger.error(f"error occured while saving the chat history for user: {chat['user_id']}, error: {str(e)}")
         raise HTTPException(status_code=400, detail=f"details are missing: {str(e)}")
+    
+
+# @router.post('/chat')
+# async def add_chat_history(request: ChatHistoryDetails,db:Session=Depends(get_db)):
+#     chat = request.model_dump()
+#     if chat["chat_history_id"] is None:
+#         logger.info(f"This is the first request to add it to chat, {chat['chat_history_id']}, for request: {chat}")
+#         print(f"This is the first request to add it to chat, {chat['chat_history_id']}")
+#     if chat["chat_history_id"] is not None:
+#         logger.info(f"This is the follow up request to add to existing chat history: {chat['chat_history_id']}, for request: {chat}")
+#         print(f"This is the follow up request to add to existing chat history: {chat['chat_history_id']}")
+    # try:
+        
+    #     logger.info(f"got the details in api ,saving the chat history for user: {chat['user_id']}")
+        # save_chat = await save_chat_history(chat=chat, db=db)
+    #     logger.info(f"save chat details: {save_chat}")
+
+    #     if not save_chat:
+    #         logger.error(f"Failed to save chat history for user: {chat['user_id']} due to no response in save chat")
+    #         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to save chat history LLM didnt respond correctly about the document")
+    #     else:
+    #         try:
+    #             final_report_chunks = await chunking.chunk_text(text=chat['message'][0]['content'])
+    #             logger.info(f"chunking complete for chat_history_id:{save_chat['chat_history_id']}, total chunks: {len(final_report_chunks)}")
+    #         except Exception as e:
+    #             logger.error(f"Error during chunking for chat_history_id: {save_chat['chat_history_id']}, error: {e}")
+    #             raise HTTPException(status_code= status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"chunking failed: {e}")
+    #         try:
+    #             vectordb_resp = await vector_db.create_embeddings(
+    #                 texts= final_report_chunks,
+    #                 model=settings.EMBEDDING_MODEL,
+    #                 chat_history_id=save_chat["chat_history_id"]
+    #             )
+    #             logger.info(f"successfully created embedding and added to vector DB for chat_history_id: {save_chat['chat_history_id']}")
+    #         except Exception as e:
+    #             logger.error(f"Error during embedding creation for chat_history_id: {save_chat['chat_history_id']}, error: {e}")
+    #             raise HTTPException(status_code= status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"embedding creation failed: {e}")
+    #             # vector_db.create_embeddings(text=chat['message'][0]['content'], chat_history_id=save_chat["chat_history_id"])
+    #         logger.info(f"successfully saved the chat history for user: {chat['user_id']} and chat_history_id: {save_chat['chat_history_id']}")
+        
+    #     #creating the summary of the final report chunks
+    #     try:
+    #         summary_report = await main_report_summary(main_report= chat['message'][0]['content'])
+    #         summary_detail_report = {
+    #             "chat_history_id": save_chat["chat_history_id"],
+    #             "user_id": save_chat["user_id"],
+    #             "report_content" : chat['message'][0]['content'],
+    #             "summary_report": summary_report
+
+    #         }
+    #         logger.info(f"summary_detail_report: {summary_detail_report}")
+    #         logger.info(f"Successfully created the summary report for chat_history_id: {save_chat['chat_history_id']}")
+    #         await save_report_version(summary_report_details=summary_detail_report, db=db)
+    #         logger.info(f"Successfully saved the summary report for chat_history_id: {save_chat['chat_history_id']}")
+    #     except Exception as e:
+    #         logger.error(f"Error during summary report creation and saving for chat_history_id: {save_chat['chat_history_id']}, error:{str(e)}")
+    #         raise HTTPException(status_code= status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error occured on creating and saving the summary report: {str(e)}")
+
+    #     return {"status":save_chat["status"], "chat_history_id":save_chat["chat_history_id"], "user_id":save_chat["user_id"],"message":save_chat["message"]}
+    # except Exception as e:
+    #     logger.error(f"error occured while saving the chat history for user: {chat['user_id']}, error: {str(e)}")
+    #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"details are missing: {str(e)}")
     
 
 @router.delete('/chat/{chat_id}')
@@ -440,4 +521,64 @@ async def conversation_with_doc(request:ChatHistoryDetails,current_user = Depend
         chat_context["message"].append({"role": "assistant", "content": LLM_response, "timestamp": datetime.now().isoformat()})
         await save_chat_with_doc(chat_context=chat_context, db=db)
 
-    
+# @router.post('/chat-with-doc')
+# async def conversation_with_doc(request:ChatHistoryDetails,current_user = Depends(token_validator), db:Session=Depends(get_db)):
+
+#     if current_user['regular_login_token']['id'] == request.user_id:
+#         chat_context = request.model_dump()
+#         logger.info(f"chat_context: {chat_context}")
+
+#         #Threshold for token count to decide whether to summarize or not
+#         token_count = await count_token(chat_context["message"][1:])
+#         logger.info(f"Total token count in the conversation: {token_count}")
+#         if token_count > 3000:
+#             logger.info(f"Token count exceeds threshold, generating conversation summary")
+#             try:
+#                 conversation_summary = await conversation_summary_llm(conversation=chat_context["message"][1:])
+#                 logger.info(f"Conversation summary generated")
+#                 chat_messages_list = conversation_summary
+#             except Exception as e:
+#                 logger.error(f"Error generating conversation summary: {str(e)}, user_id: {chat_context['user_id']}, chat_history_id: {chat_context['chat_history_id']}")
+#                 raise HTTPException(status_code=500, detail= f" Error generatingconversation summary: {str(e)}")
+#         else:
+#             chat_messages_list = chat_context["message"][1:]
+
+#         # pull details from DB based on chat history id, main report summary.
+
+#         try:
+#             report_summary = await get_summary_report(chat_history_id=chat_context["chat_history_id"], db=db)
+#             logger.info(f"Successfully retrieved the latest report summary from DB for chat_history_id: {chat_context['chat_history_id']}")
+#         except Exception as e:
+#             logger.error(f"Error retrieving report summary from DB for chat_history_id: {chat_context['chat_history_id']}, error: {str(e)}")
+
+#             raise HTTPException(status_code=500, detail= f"Error retrieving report summary: {str(e)}")
+        
+#         #check for summary or throw and error if i dont get the data since every report will have summary
+#         if not report_summary:
+#             logger.error(f" No report summary found for chat_history_id: {chat_context['chat_history_id']}")
+#             raise HTTPException(status_code=404, detail = f"No report summary found for chat_history_id: {chat_context['chat_history_id']}")
+        
+#         try:
+#             router_llm_response = await router_query_llm(
+#                 user_message = chat_context["message"][-1]["content"],
+#                 conversation_summary= chat_messages_list,
+#                 report_summary= report_summary
+#             )
+#             logger.info(f"Router LLM response received for chat_history_id: {chat_context['chat_history_id']}")
+#             return {"message": f"{router_llm_response}"}
+#         except Exception as e:
+#             logger.error(f"Error in router LLM processing: {str(e)}, chat_history_id: {chat_context['chat_history_id']}")
+#             raise HTTPException(status_code=500, detail= f"Error in router LLM processing: {str(e)}")
+        
+        
+            
+
+
+
+
+            # # adding router LLM to direct the query to appropriate model
+            # router_response = await router_query_llm(
+            #     user_query = chat_context["message"][-1]["content"],
+
+            # )
+

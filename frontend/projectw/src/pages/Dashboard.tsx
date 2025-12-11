@@ -98,14 +98,23 @@ const Dashboard: React.FC = () => {
   const [isSplitView, setIsSplitView] = useState(false);
   const [selectedJiraIssue, setSelectedJiraIssue] = useState<string | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  // Add a debounce tracking variable
+  const refreshInProgress = useRef(false);
+  const refreshTimeout = useRef<number | null>(null);
+  // Add flag to track if data has actually changed 
+  const dataChanged = useRef(false);
 
   // Check authentication on component mount
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login');
     } else {
-      // Fetch existing conversations
+      // Fetch existing conversations only once at mount
+      console.log("Initial conversations fetch on component mount");
       fetchConversations();
+      
+      // We don't need to refresh on visibility change - removing for performance
+      // Only refresh when actual data changes occur (uploads, chat interactions)
     }
   }, [isAuthenticated, navigate]);
 
@@ -153,6 +162,9 @@ const Dashboard: React.FC = () => {
   // Fetch user's conversations with full content
   const fetchConversations = async () => {
     try {
+      const timestamp = new Date().getTime();
+      console.log(`Starting fetchConversations at timestamp: ${timestamp}`);
+      
       // Get the token for authentication
       const token = localStorage.getItem('token') || 
                   localStorage.getItem('regular_token') || 
@@ -164,13 +176,13 @@ const Dashboard: React.FC = () => {
       }
       
       // Set the authorization header explicitly and add cache-busting parameter
-      const response = await axios.get(`${API_URL}/chat?_t=${new Date().getTime()}`, {
+      const response = await axios.get(`${API_URL}/chat?_t=${timestamp}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
       
-      console.log("Fetched conversations data:", response.data);
+      console.log(`Received conversations data at timestamp: ${timestamp}`);
       
       if (response.data && response.data.user_details) {
         // Sort conversations by modified_at descending (newest first)
@@ -197,7 +209,7 @@ const Dashboard: React.FC = () => {
         
         setConversations(conversationsArray);
         
-        console.log("Updated conversation states");
+        console.log(`Updated conversation states at timestamp: ${timestamp}`);
       }
     } catch (error) {
       console.error('Error fetching conversations:', error);
@@ -659,6 +671,9 @@ const Dashboard: React.FC = () => {
         // Refresh conversation list
         fetchConversations();
         
+        // Mark that data has changed
+        dataChanged.current = true;
+        
         // Scroll to bottom
         setTimeout(() => {
           messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -760,6 +775,9 @@ const Dashboard: React.FC = () => {
         
         // Close any open dropdown
         setActiveDropdown(null);
+        
+        // Mark data as changed
+        dataChanged.current = true;
         
         // Fetch fresh conversations to ensure UI is in sync with backend
         fetchConversations();
@@ -883,6 +901,9 @@ const Dashboard: React.FC = () => {
           }
         }
       );
+      
+      // Mark data as changed
+      dataChanged.current = true;
       
       // Refresh conversations to get updated title
       fetchConversations();
@@ -1638,17 +1659,14 @@ const Dashboard: React.FC = () => {
         // Clear the uploaded files
         setUploadedFiles([]);
         
-        // Ensure sidebar refresh after document processing
-        await refreshSidebar();
+        // Mark that data has changed requiring a refresh
+        dataChanged.current = true;
         
-        // Add additional refresh with delay to make sure backend changes are reflected
+        // Wait briefly to ensure backend has processed the document,
+        // then refresh the sidebar once
         setTimeout(async () => {
-          try {
-            await refreshSidebar();
-          } catch (error) {
-            console.error('Error in delayed sidebar refresh after processing:', error);
-          }
-        }, 2000);
+          await refreshSidebar();
+        }, 500);
         
         // Scroll to the bottom of the chat
         setTimeout(() => {
@@ -1685,26 +1703,46 @@ const Dashboard: React.FC = () => {
 
   // Update this function to force a refresh of the sidebar after document upload
   const refreshSidebar = async () => {
+    // If a refresh is already in progress or scheduled, don't start another one
+    if (refreshInProgress.current) {
+      console.log("Refresh already in progress, skipping redundant call");
+      return;
+    }
+
+    // Skip refresh if no data change has occurred
+    if (!dataChanged.current) {
+      console.log("No data changes detected, skipping refresh");
+      return;
+    }
+
+    // If there's a pending timeout, clear it
+    if (refreshTimeout.current) {
+      clearTimeout(refreshTimeout.current);
+      refreshTimeout.current = null;
+    }
+
+    // Set a flag to prevent concurrent refreshes
+    refreshInProgress.current = true;
+
     try {
+      console.log("Performing sidebar refresh due to data change");
       await fetchConversations();
+      
+      // Reset data changed flag after successful refresh
+      dataChanged.current = false;
       
       // Force a render by making a small state change
       setSidebarExpanded(prev => {
         setTimeout(() => setSidebarExpanded(prev), 50);
         return !prev;
       });
-      
-      // Add a second attempt with delay to handle race conditions with backend
-      setTimeout(async () => {
-        try {
-          await fetchConversations();
-          console.log("Performed delayed sidebar refresh");
-        } catch (error) {
-          console.error('Error in delayed sidebar refresh:', error);
-        }
-      }, 1000);
     } catch (error) {
       console.error('Error refreshing sidebar:', error);
+    } finally {
+      // Clear the flag after a short delay to prevent immediate re-triggers
+      refreshTimeout.current = setTimeout(() => {
+        refreshInProgress.current = false;
+      }, 300);
     }
   };
 

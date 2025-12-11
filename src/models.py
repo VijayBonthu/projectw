@@ -5,6 +5,7 @@ from config import settings
 import uuid
 from sqlalchemy.sql.sqltypes import TIMESTAMP
 from sqlalchemy.sql.expression import text
+from sqlalchemy.dialects.postgresql import JSON
 
 Base = declarative_base()
 engine = create_engine(settings.DATABASE_URL)
@@ -67,4 +68,13 @@ class SelectedChat(Base):
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
     modified_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
     message = Column(String, nullable=False)
-    
+
+class ReportVersions(Base):
+    __tablename__ = "report_version"
+    report_version_id = Column(String, primary_key=True, nullable=False, index=True, default=lambda:str(uuid.uuid4()))
+    chat_history_id = Column(String, ForeignKey(ChatHistory.chat_history_id), nullable=False, index=True)
+    user_id = Column(String, ForeignKey(User.user_id), nullable=False, index=True)
+    version_number = Column(Integer, nullable=False, default=1, index=True)
+    report_content = Column(String, nullable=False)
+    summary_report = Column(JSON, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))

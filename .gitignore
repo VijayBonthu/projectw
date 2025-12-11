@@ -43,3 +43,6 @@ project description.mdc
 .cursor
 rules_frontend.mdc
 
+# test files, ouput files
+checking_json.json
+output/

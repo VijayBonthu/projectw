@@ -12,7 +12,7 @@ class ProjectDefinition(BaseModel):
     project_scope: Optional[str] = Field(description="The project definition of the document")
     project_requirements: Optional[str] = Field(description= "Provides the project requirements")
     high_level_flow: Optional[str] = Field(description= "Provides the high level flow of the project from a system architect perspective")
-    ambiguity_analysis: Optional[list[str]]= Field(description= "Provides the ambiguity analysis of the document")
+    ambiguities: Optional[list[str]]= Field(description= "Provides the ambiguity analysis of the document")
 
     def to_markdown(self) -> str:
         """Convert the project definition to markdown"""
@@ -56,9 +56,9 @@ class ProjectDefinition(BaseModel):
         else:
             md += f"### High Level Flow: None\n"
 
-        if self.ambiguity_analysis:
+        if self.ambiguities:
             md += f"### Ambiguity Analysis\n"
-            for ambiguity in self.ambiguity_analysis:
+            for ambiguity in self.ambiguities:
                 md += f"- {ambiguity}\n"
         else:
             md += f"### Ambiguity Analysis: None\n"

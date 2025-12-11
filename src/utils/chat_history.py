@@ -184,5 +184,52 @@ async def save_chat_with_doc(chat_context:Dict, db:Session):
     except Exception as e:
         db.rollback()
         logger.error(f"Error in saving the selected chat: {str(e)}")
+
+async def save_report_version(summary_report_details:Dict, db:Session):
+    """
+    save_report_version
+    
+    :param summary_report_details: Description
+    :type summary_report_details: Dict
+    :param db: Description
+    :type db: Session
+
+
+    """
+    try:
+        report_details_exists = db.query(models.ReportVersions).filter(models.ReportVersions.chat_history_id == summary_report_details["chat_history_id"]).order_by(models.ReportVersions.created_at.desc()).first()
+        if report_details_exists:
+            version_details = report_details_exists.version_number + 1
+
+            new_report_insert = models.ReportVersions(
+                report_version_id = str(uuid.uuid4()),
+                chat_history_id = summary_report_details["chat_history_id"],
+                user_id = summary_report_details["user_id"],
+                version_number = version_details,
+                report_content = summary_report_details["report_content"],
+                summary_report = summary_report_details["summary_report"]
+            )
+            db.add(new_report_insert)
+            db.commit()
+            db.refresh(new_report_insert)
+            logger.info(f"new report version saved successfully for chat_history_id: {str(summary_report_details['chat_history_id'])} and version: {str(version_details)} for user: {str(summary_report_details['user_id'])}")
+        else:
+            new_report_insert = models.ReportVersions(
+                report_version_id = str(uuid.uuid4()),
+                chat_history_id = summary_report_details["chat_history_id"],
+                user_id = summary_report_details["user_id"],
+                report_content = summary_report_details["report_content"],
+                summary_report = summary_report_details["summary_report"]
+            )
+            db.add(new_report_insert)
+            db.commit()
+            db.refresh(new_report_insert)
+            logger.info(f"brand new report version saved successfully for chat_history_id: {str(summary_report_details['chat_history_id'])} for user: {str(summary_report_details['user_id'])}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error in saving the report version: {str(e)}")
+
+
+
         
     

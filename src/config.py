@@ -32,6 +32,14 @@ class Settings:
     REDIS_PORT = os.getenv("REDIS_PORT")
     # REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
     REDIS_SSL = os.getenv("REDIS_SSL")
+    CHROMA_API_KEY = os.getenv("CHROMA_API_KEY")
+    CHROME_TENANT = os.getenv("CHROMA_TENANT")
+    CHROMA_DATABASE = os.getenv("CHROMA_DATABASE")
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
+    GENERATING_REPORT_MODEL = os.getenv("GENERATING_REPORT_MODEL")
+    SUMMARIZATION_MODEL = os.getenv("SUMMARIZATION_MODEL")
+    FALL_BACK_MODEL = os.getenv("FALL_BACK_MODEL")
+
 
 
 

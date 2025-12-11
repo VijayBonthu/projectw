@@ -174,3 +174,6 @@ async def validate_app_user(token:str):
         return await validate_token(token=token, credential_exception=credential_exception)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"error {str(e)}")
+    
+
+
